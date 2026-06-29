@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+:root {
+  --ronin-background: #f4f1ea;
+  --ronin-panel: #fbf8f1;
+  --ronin-panel-muted: #eee9dd;
+  --ronin-foreground: #17140f;
+  --ronin-muted: #6f685c;
+  --ronin-border: #d8d0c1;
+  --ronin-strong-border: #b7ab98;
+  --ronin-grid: rgb(216 208 193 / 0.25);
+  --ronin-accent: #2a4b3f;
+  --ronin-accent-foreground: #f8f1e3;
+  --ronin-danger: #8b2d24;
+  --ronin-success: #28624b;
+  --ronin-warning: #7b5a20;
+}
+
+.dark {
+  --ronin-background: #0d1511;
+  --ronin-panel: #111c17;
+  --ronin-panel-muted: #17251f;
+  --ronin-foreground: #efe7d6;
+  --ronin-muted: #a79f8f;
+  --ronin-border: #293a32;
+  --ronin-strong-border: #53675c;
+  --ronin-grid: rgb(41 58 50 / 0.25);
+  --ronin-accent: #e9dcc4;
+  --ronin-accent-foreground: #111810;
+  --ronin-danger: #e17d6e;
+  --ronin-success: #8ed8b4;
+  --ronin-warning: #d9bb73;
+}
+
+@theme inline {
+  --color-ronin-background: var(--ronin-background);
+  --color-ronin-panel: var(--ronin-panel);
+  --color-ronin-panel-muted: var(--ronin-panel-muted);
+  --color-ronin-foreground: var(--ronin-foreground);
+  --color-ronin-muted: var(--ronin-muted);
+  --color-ronin-border: var(--ronin-border);
+  --color-ronin-strong-border: var(--ronin-strong-border);
+  --color-ronin-accent: var(--ronin-accent);
+  --color-ronin-accent-foreground: var(--ronin-accent-foreground);
+  --color-ronin-danger: var(--ronin-danger);
+  --color-ronin-success: var(--ronin-success);
+  --color-ronin-warning: var(--ronin-warning);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-ronin-display: var(--font-ronin-display);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: var(--ronin-accent);
+  color: var(--ronin-accent-foreground);
+}
+
+body {
+  background:
+    linear-gradient(var(--ronin-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--ronin-grid) 1px, transparent 1px),
+    var(--ronin-background);
+  background-size: 64px 64px;
+  color: var(--ronin-foreground);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.ronin-button {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ronin-border);
+  background: var(--ronin-panel);
+  padding: 0.5rem 0.85rem;
+  color: var(--ronin-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition:
+    border-color 150ms ease,
+    color 150ms ease,
+    background-color 150ms ease;
+}
+
+.ronin-button:hover {
+  border-color: var(--ronin-strong-border);
+  color: var(--ronin-foreground);
+}
+
+.ronin-button-primary {
+  border-color: var(--ronin-accent);
+  background: var(--ronin-accent);
+  color: var(--ronin-accent-foreground);
+}
+
+.ronin-button-primary:hover {
+  color: var(--ronin-accent-foreground);
+  opacity: 0.9;
+}
+
+.ronin-link-button {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: 1px solid var(--ronin-border);
+  background: var(--ronin-panel-muted);
+  padding: 0.5rem 0.75rem;
+  color: var(--ronin-muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1;
+  transition:
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.ronin-link-button:hover {
+  border-color: var(--ronin-strong-border);
+  color: var(--ronin-foreground);
+}
+
+.theme-toggle-sun {
+  display: none;
+}
+
+.light .theme-toggle-sun {
+  display: block;
+}
+
+.light .theme-toggle-moon {
+  display: none;
+}

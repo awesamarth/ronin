@@ -1,0 +1,48 @@
+---
+title: Known Gaps
+description: Current demo boundaries and production gaps.
+---
+
+# Known Gaps
+
+Ronin's current demo path is real, but it is still a local-first hackathon build.
+
+## Deployment
+
+The dashboard, database, GitHub webhook URL, Slack connector, Telegram connector, and NemoHermes/OpenShell runner still need a production deployment plan.
+
+The local demo runs with:
+
+- Dashboard on `localhost:3004`
+- Docs on `localhost:3005/docs`
+- Slack Socket Mode connector
+- Telegram long-polling connector
+- NemoHermes/OpenShell sandbox named `hermes`
+
+## Tenant model
+
+The current dashboard assumes a local operator surface and mostly uses the first configured org. A production version needs real auth, org switching, install ownership, and cleaner customer onboarding.
+
+## Background work
+
+Webhook and support-message paths can process workspace runs now, but production should move long-running sandbox work to a queue and worker.
+
+That keeps HTTP request lifecycles short and gives better retry, cancellation, and progress reporting.
+
+## Sandbox policy profiles
+
+The current verified policy supports the JS/Next demo repo: Bun, npm/yarn registries, Node, curl, and Google Fonts for Next/font.
+
+Production Ronin should detect repo stacks and apply policy profiles for ecosystems such as Python, Rust, Go, and Java instead of manually adjusting sandbox policy per repo.
+
+## Support routing UI
+
+Slack and Telegram mappings are DB-backed and functional, but the UI is still operator-oriented.
+
+A customer-ready flow should guide users through selecting a workspace, channel, repo, and allowed actions without exposing too much internal vocabulary.
+
+## Approval policy
+
+Ronin records budget-capped provisioning plans and approvals. The broader approval model for PR comments, deploys, paid APIs, and infrastructure changes is still basic.
+
+For the demo, the important invariant is that Ronin does not silently create paid resources.

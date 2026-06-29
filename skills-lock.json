@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "ronin": {
+      "source": "/Users/awesamarth/Desktop/code/ronin",
+      "sourceType": "local",
+      "computedHash": "f9b294236935e3dbc5ffb39eef318167fd64c307f5843e437bb6e5c355225dc9"
+    }
+  }
+}

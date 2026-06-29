@@ -1,0 +1,149 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Org {
+  id                   String   @id @default(cuid())
+  name                 String
+  slug                 String   @unique
+  githubOrgId          String?
+  githubOrgLogin       String?  @unique
+  githubInstallationId String?  @unique
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  repos        Repository[]
+  channels     Channel[]
+  runs         Run[]
+  artifacts    Artifact[]
+  githubEvents GitHubEvent[]
+  auditLogs    AuditLog[]
+}
+
+model Repository {
+  id             String   @id @default(cuid())
+  orgId          String
+  githubRepoId   String?  @unique
+  fullName       String
+  defaultBranch  String   @default("main")
+  latestKnownSha String?
+  watchedEnabled Boolean  @default(true)
+  capabilities   String   @default("docs,pr_review,support_answers")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  org          Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  channels     Channel[]
+  runs         Run[]
+  artifacts    Artifact[]
+  githubEvents GitHubEvent[]
+  auditLogs    AuditLog[]
+
+  @@unique([orgId, fullName])
+  @@index([orgId])
+}
+
+model Channel {
+  id                String   @id @default(cuid())
+  orgId             String
+  defaultRepoId     String?
+  platform          String
+  platformTeamId    String?
+  platformChannelId String
+  displayName       String?
+  allowedRepoIds    String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  org         Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  defaultRepo Repository? @relation(fields: [defaultRepoId], references: [id], onDelete: SetNull)
+
+  @@unique([platform, platformTeamId, platformChannelId])
+  @@index([orgId])
+}
+
+model Run {
+  id          String   @id
+  orgId       String
+  repoId      String?
+  kind        String
+  status      String
+  summary     String?
+  input       String
+  output      String?
+  createdAt   DateTime @default(now())
+  completedAt DateTime?
+
+  org       Org          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  repo      Repository?  @relation(fields: [repoId], references: [id], onDelete: SetNull)
+  artifacts Artifact[]
+  auditLogs AuditLog[]
+
+  @@index([orgId, kind, createdAt])
+  @@index([repoId])
+}
+
+model Artifact {
+  id        String   @id @default(cuid())
+  orgId     String
+  repoId    String?
+  runId     String?
+  kind      String
+  title     String
+  path      String?
+  content   String
+  createdAt DateTime @default(now())
+
+  org  Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  repo Repository? @relation(fields: [repoId], references: [id], onDelete: SetNull)
+  run  Run?        @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, kind, createdAt])
+  @@index([repoId])
+  @@index([runId])
+}
+
+model GitHubEvent {
+  id             String   @id @default(cuid())
+  orgId          String
+  repoId         String?
+  deliveryId     String?  @unique
+  eventName      String
+  action         String?
+  installationId String?
+  payload        String
+  processedAt    DateTime?
+  createdAt      DateTime @default(now())
+
+  org  Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  repo Repository? @relation(fields: [repoId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, eventName, createdAt])
+  @@index([repoId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  orgId     String
+  repoId    String?
+  runId     String?
+  actorType String
+  actorId   String?
+  action    String
+  target    String?
+  metadata  String?
+  createdAt DateTime @default(now())
+
+  org  Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  repo Repository? @relation(fields: [repoId], references: [id], onDelete: SetNull)
+  run  Run?        @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, createdAt])
+  @@index([repoId])
+  @@index([runId])
+}

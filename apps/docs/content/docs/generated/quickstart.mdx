@@ -1,0 +1,75 @@
+---
+title: Operator Quickstart
+description: Connect a repo, map support channels, and let Ronin create sandboxed PRs.
+---
+
+# Operator Quickstart
+
+This is the current Ronin demo flow.
+
+## 1. Connect GitHub
+
+Install the Ronin GitHub App on the org or selected repositories.
+
+Ronin stores the installation, syncs accessible repos, and mints short-lived installation tokens only when a run needs repo access.
+
+## 2. Watch a repo
+
+Choose a repository from the installed GitHub App scope.
+
+For the current demo, `awesamarth/status-page-sdk` is watched. Ronin creates runs for onboarding and GitHub events, then stores artifacts such as workspace patches, PR links, support answers, and audit events.
+
+## 3. Map support channels
+
+Map a Slack channel, Slack DM, Telegram chat, or Telegram topic to a watched repo.
+
+The current verified Slack route is:
+
+```text
+Slack C0BDFU1BXMZ / #status-page -> awesamarth/status-page-sdk
+```
+
+When a message arrives, Ronin resolves the channel to org and repo context before Hermes runs. Hermes should not guess which codebase the user means.
+
+## 4. Ask for an answer
+
+Example Slack message:
+
+```text
+@Ronin what is status-page about?
+```
+
+Ronin routes the message to `status-page-sdk`, invokes Hermes with repo/artifact context, and stores a support answer artifact.
+
+## 5. Ask for a repo change
+
+Example Slack message:
+
+```text
+@Ronin Please add a short README section named Environment configuration explaining that STATUS_PAGE_BASE_URL can point the demo dashboard at a real status-page API, and open a PR.
+```
+
+Ronin classifies this as a workspace request, starts a NemoHermes/OpenShell sandbox run, clones the repo, lets Hermes edit files, runs checks, pushes a Ronin branch, and opens a GitHub PR.
+
+Verified PR:
+
+```text
+https://github.com/awesamarth/status-page-sdk/pull/3
+```
+
+## 6. Gate spend
+
+Provisioning is treated as a spend lane, not an automatic side effect.
+
+Ronin invokes Hermes with the `ronin` and `stripe-projects` skills, validates the requested service against the real Stripe Projects catalog, and stores the exact command it would run after approval.
+
+Current verified dry-run:
+
+```text
+Service: vercel/project
+Budget cap: $5.00
+Command: stripe projects add vercel/project --name "ronin-generated-docs" --json
+Execution mode: dry_run_capable_not_executed
+```
+
+No provider resource is created during the demo path.
