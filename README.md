@@ -4,6 +4,10 @@ Ronin is an agentic solutions engineer for protocol teams, devtool companies, an
 
 Ronin sits around Hermes as the product and control plane. Ronin owns tenants, GitHub App installations, repository routing, support-channel mappings, artifacts, audit logs, and spend policy. Hermes does the reasoning and repo work after Ronin has resolved the right org, repo, channel, and allowed action.
 
+## Video Demo
+
+[Watch the Ronin demo on X](https://x.com/awesamarth_/status/2071708541464011037)
+
 ## What It Does
 
 - Watches repositories installed through the Ronin GitHub App.
