@@ -74,6 +74,17 @@ The dashboard is an operator console, not a marketing landing page.
 - Modals are appropriate for setup details such as Slack and Telegram.
 - The watched repositories and latest agent work sections should reflect real DB state.
 
+## TODO
+
+- Add authorized Slack thread commands for inspecting and overriding harness, model, provider, and reasoning (`/ronin settings`, `/ronin model`, `/ronin reasoning`, `/ronin reset`). Public/external users must remain on operator-controlled defaults.
+- Add organization memberships and roles so public users, external support users, internal members, and operators receive explicitly different repository, knowledge, and action permissions.
+- Replace manual DM channel-ID mappings with an authorized onboarding and repository-selection flow.
+- Add a restricted public-conversation execution profile that cannot access company repositories, tools, or credentials; prompt instructions alone are not a security boundary.
+- Add a scoped `ronin:` Centaur service identity and renewable authentication instead of Console/admin-capable temporary credentials.
+- Broker narrowly scoped GitHub write credentials to Centaur for authorized branch pushes without exposing GitHub App installation tokens.
+- Finish hosted operations: production OAuth callback, TLS proxy, database backups/restores, process supervision, monitoring, and log collection.
+- Validate Telegram live without contacting existing users unexpectedly.
+
 ## Verification
 
 For code changes, run the narrowest useful checks first, then broaden if the change touches shared behavior:
