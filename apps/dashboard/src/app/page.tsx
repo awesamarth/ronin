@@ -2,6 +2,7 @@ import { ConfigureActions } from "@/components/configure-actions";
 import { getOperatorSession } from "@/lib/auth";
 import { GitHubInstallSync } from "@/components/github-install-sync";
 import { GitHubRepoActions } from "@/components/github-repo-actions";
+import { RepoAgentSettings } from "@/components/repo-agent-settings";
 import { StatusPill } from "@/components/status-pill";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
@@ -254,9 +255,14 @@ function RepoCard({
   repo,
 }: {
   repo: {
+    id: string;
     capabilities: string[];
     fullName: string;
     latestKnownSha: string | null;
+    harnessType: string;
+    model: string | null;
+    provider: string | null;
+    reasoning: string | null;
   };
 }) {
   return (
@@ -271,6 +277,7 @@ function RepoCard({
         <StatusPill status="done" />
       </div>
       <div className="mt-3 flex flex-wrap gap-2 font-mono text-xs text-ronin-muted">
+        <span className="border border-ronin-border bg-ronin-panel-muted px-2 py-1">{repo.harnessType}</span>
         {repo.capabilities.slice(0, 4).map((capability) => (
           <span className="border border-ronin-border bg-ronin-panel-muted px-2 py-1" key={capability}>
             {capability}
@@ -278,6 +285,7 @@ function RepoCard({
         ))}
         {repo.latestKnownSha ? <span className="border border-ronin-border bg-ronin-panel-muted px-2 py-1">{repo.latestKnownSha.slice(0, 7)}</span> : null}
       </div>
+      <RepoAgentSettings repo={repo} />
     </div>
   );
 }

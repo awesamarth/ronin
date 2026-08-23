@@ -54,6 +54,10 @@ export type WorkspaceOverview = {
     capabilities: string[];
     latestKnownSha: string | null;
     watchedEnabled: boolean;
+    harnessType: string;
+    model: string | null;
+    provider: string | null;
+    reasoning: string | null;
   }>;
 };
 
@@ -154,6 +158,10 @@ export async function getWorkspaceOverview(): Promise<WorkspaceOverview | null> 
       id: repo.id,
       latestKnownSha: repo.latestKnownSha,
       watchedEnabled: repo.watchedEnabled,
+      harnessType: repo.harnessType,
+      model: repo.model,
+      provider: repo.provider,
+      reasoning: repo.reasoning,
     })),
   };
 }
