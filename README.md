@@ -119,6 +119,25 @@ Important values:
 
 Do not expose the GitHub private key, Slack tokens, Telegram token, database, or local `key.pem` to the browser or commit them to Git.
 
+## Docker deployment
+
+The default stack runs PostgreSQL, migrations, dashboard, docs, and the durable GitHub worker:
+
+```bash
+export POSTGRES_PASSWORD="$(openssl rand -hex 32)"
+docker compose up -d postgres migrate dashboard github-worker docs
+```
+
+Run connectors only when their credentials are configured:
+
+```bash
+docker compose --profile slack up -d slack
+# Or, when Telegram is configured:
+docker compose --profile telegram up -d telegram
+```
+
+For a hosted deployment, set a strong `RONIN_SESSION_SECRET`, `RONIN_ALLOWED_GITHUB_USERS`, public `RONIN_BASE_URL`, and `GITHUB_APP_PRIVATE_KEY` in `apps/dashboard/.env`; terminate TLS at a reverse proxy and back up the `postgres-data` volume. The image never copies local env files or `key.pem`.
+
 ## Status
 
 The current build is real for:

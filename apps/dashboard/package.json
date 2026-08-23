@@ -7,10 +7,10 @@
     "build": "next build",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:seed": "PATH=$HOME/.nvm/versions/node/v24.12.0/bin:$PATH tsx src/lib/db-seed.ts",
-    "github:worker": "tsx src/scripts/github-worker.ts",
-    "slack:connector": "tsx src/scripts/slack-connector.ts",
-    "telegram:connector": "tsx src/scripts/telegram-connector.ts",
+    "db:seed": "bun src/lib/db-seed.ts",
+    "github:worker": "bun src/scripts/github-worker.ts",
+    "slack:connector": "bun src/scripts/slack-connector.ts",
+    "telegram:connector": "bun src/scripts/telegram-connector.ts",
     "start": "next start",
     "lint": "eslint"
   },
@@ -38,7 +38,6 @@
     "node-gyp": "^13.0.0",
     "prisma": "7.9.1",
     "tailwindcss": "^4",
-    "tsx": "^4.22.4",
     "typescript": "^5"
   },
   "ignoreScripts": []

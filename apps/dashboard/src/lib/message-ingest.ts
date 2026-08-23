@@ -178,6 +178,7 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
               content: message,
             },
           });
+          throw new Error(`Ronin pushed the branch but could not open its PR: ${message}`);
         }
       }
 
@@ -204,7 +205,7 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
 
     const directActionRequest = detectWorkspaceActionRequest(input.text);
     if (directActionRequest) {
-      return processWorkspaceRequest({
+      return await processWorkspaceRequest({
         actionRequest: directActionRequest,
         needsDocsUpdate: true,
         reply: "I’ll make that change in the repository and open a PR.",
@@ -235,7 +236,7 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
     const intent = parsed.intent === "workspace_change" ? "workspace_change" : "answer";
 
     if (intent === "workspace_change") {
-      return processWorkspaceRequest({
+      return await processWorkspaceRequest({
         actionRequest: stringOrFallback(parsed.actionRequest, input.text),
         needsDocsUpdate,
         reply,
@@ -426,7 +427,7 @@ function detectWorkspaceActionRequest(text: string) {
   // Only an explicit PR request bypasses agent classification. Generic
   // fix/change wording must go through classification so writes stay gated.
   const normalized = text.toLowerCase();
-  const asksForPr = /\b(open|create|raise|file|submit)\s+(a\s+)?(pr|pull request)\b|\bpull request\b/.test(normalized);
+  const asksForPr = /\b(open|create|raise|file|submit)\s+(a\s+)?(pr|pull request)\b/.test(normalized);
   return asksForPr ? text.trim() : null;
 }
 

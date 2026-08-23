@@ -1,0 +1,93 @@
+x-ronin: &ronin
+  build: .
+  image: ronin:local
+  init: true
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ronin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_USER: ronin
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ronin -d ronin"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  migrate:
+    <<: *ronin
+    command: ["sh", "-c", "cd apps/dashboard && bunx prisma migrate deploy"]
+    environment:
+      DATABASE_URL: postgresql://ronin:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/ronin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  dashboard:
+    <<: *ronin
+    command: ["bun", "run", "--cwd", "apps/dashboard", "start", "--", "-H", "0.0.0.0"]
+    env_file: apps/dashboard/.env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql://ronin:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/ronin
+      RONIN_BASE_URL: ${RONIN_BASE_URL:-http://localhost:3000}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    ports:
+      - "127.0.0.1:${RONIN_PORT:-3000}:3000"
+
+  github-worker:
+    <<: *ronin
+    command: ["bun", "run", "--cwd", "apps/dashboard", "github:worker"]
+    env_file: apps/dashboard/.env
+    environment:
+      DATABASE_URL: postgresql://ronin:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/ronin
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  docs:
+    <<: *ronin
+    command: ["bun", "run", "--cwd", "apps/docs", "start", "--", "-H", "0.0.0.0"]
+    depends_on:
+      dashboard:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${RONIN_DOCS_PORT:-3005}:3000"
+
+  slack:
+    <<: *ronin
+    profiles: ["slack"]
+    command: ["bun", "run", "--cwd", "apps/dashboard", "slack:connector"]
+    env_file: apps/dashboard/.env
+    environment:
+      DATABASE_URL: postgresql://ronin:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/ronin
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  telegram:
+    <<: *ronin
+    profiles: ["telegram"]
+    command: ["bun", "run", "--cwd", "apps/dashboard", "telegram:connector"]
+    env_file: apps/dashboard/.env
+    environment:
+      DATABASE_URL: postgresql://ronin:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/ronin
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  postgres-data:

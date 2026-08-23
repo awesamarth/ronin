@@ -37,6 +37,7 @@ type WorkspaceReport = {
   prTitle?: string;
   prBody?: string;
   pushed?: boolean;
+  error?: string | null;
 };
 
 const REQUIRED_FIELDS: Array<keyof WorkspaceReport> = [
@@ -50,6 +51,7 @@ const REQUIRED_FIELDS: Array<keyof WorkspaceReport> = [
   "commitSha",
   "pushed",
   "diff",
+  "error",
 ];
 
 export async function runGithubWorkspaceMaintenance(input: WorkspaceRunInput): Promise<WorkspaceRunResult> {
@@ -75,10 +77,16 @@ export async function runGithubWorkspaceMaintenance(input: WorkspaceRunInput): P
     throw new Error(`Centaur workspace run did not return valid JSON. Output:\n${result.rawOutput.slice(-4000)}`);
   }
 
+  if (report.error !== undefined && report.error !== null && typeof report.error !== "string") {
+    throw new Error(`Centaur workspace report field "error" must be a string or null.`);
+  }
+  if (report.error?.trim()) throw new Error(`Centaur workspace run failed: ${report.error.trim()}`);
+
   // Check for required fields — treat missing fields as malformed output.
   const missing = REQUIRED_FIELDS.filter((field) => {
     const value = report[field];
-    if (value === undefined || value === null) return true;
+    if (value === undefined) return true;
+    if (value === null) return field !== "commitSha" && field !== "error";
     if (typeof value === "string" && value.length === 0 && field !== "commitSha" && field !== "diff") return true;
     return false;
   });
@@ -173,8 +181,11 @@ When finished, return ONLY strict JSON (no markdown fences, no extra prose) with
   "branch": "${input.branch}",
   "commitSha": "sha or null if not pushed",
   "pushed": true,
-  "diff": "the git diff of your changes"
-}`;
+  "diff": "the git diff of your changes",
+  "error": null
+}
+
+Set error to a concise operational failure message instead of null when repository access, editing, checks, commit, or push could not be completed.`;
 }
 
 function parseWorkspaceReport(output: string): WorkspaceReport | null {
