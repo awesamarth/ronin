@@ -26,7 +26,7 @@ jobs:
       DATABASE_URL: postgresql://ronin:${{ github.sha }}@127.0.0.1:5432/ronin
       RONIN_ALLOWED_GITHUB_USERS: ci
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: echo "RONIN_SESSION_SECRET=${GITHUB_SHA}${GITHUB_SHA}" >> "$GITHUB_ENV"
       - uses: oven-sh/setup-bun@v2
         with:
@@ -34,7 +34,7 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run --cwd apps/dashboard db:generate
       - run: cd apps/dashboard && bunx prisma migrate deploy
-      - run: bun test apps/dashboard/src/lib/auth.test.ts apps/dashboard/src/lib/centaur-client.test.ts
+      - run: bun test apps/dashboard/src/lib/*.test.ts
       - run: bun run lint
       - run: bun run build
       - run: cp apps/dashboard/.env.example apps/dashboard/.env && POSTGRES_PASSWORD="$GITHUB_SHA" docker compose config -q

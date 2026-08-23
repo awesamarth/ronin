@@ -1,4 +1,4 @@
-import { runCentaurTask, buildThreadKey, type CentaurExecutionConfig } from "./centaur-client";
+import { runCentaurTask, buildThreadKey, type CentaurExecutionConfig, type CentaurResult } from "./centaur-client";
 import { prisma } from "./prisma";
 
 export type WorkspaceRunInput = {
@@ -24,6 +24,8 @@ export type WorkspaceRunResult = {
   pushed: boolean;
   testLog: string;
   workspace: string;
+  runnerBackend: string;
+  executionConfig: CentaurResult["config"];
 };
 
 type WorkspaceReport = {
