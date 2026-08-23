@@ -52,7 +52,12 @@ async function handleSlackMessage(input: { client: App["client"]; event: SlackMe
     if (mode === "dm" && !(await isMappedChannel(teamId, event.channel))) {
       await client.chat.postMessage({
         channel: event.channel,
-        text: answerPublicRoninMessage(event.text),
+        text: await answerPublicRoninMessage({
+          message: event.text,
+          teamId,
+          channelId: event.channel,
+          eventId: event.ts ?? event.thread_ts ?? crypto.randomUUID(),
+        }),
         thread_ts: event.thread_ts ?? event.ts,
       });
       console.log(JSON.stringify({ event: "slack.public_answered", teamId, channelId: event.channel }));

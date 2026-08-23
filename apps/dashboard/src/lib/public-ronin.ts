@@ -1,22 +1,34 @@
-const INTRO =
-  "I’m Ronin, an agentic solutions engineer. I help teams explain, support, test, and improve their products by connecting customer questions to documentation, repositories, and reviewable fixes.";
+import { buildThreadKey, runCentaurTask } from "./centaur-client";
 
-export function answerPublicRoninMessage(text: string) {
-  const question = text.toLowerCase();
+const PUBLIC_BRIEF = `
+Ronin is an agentic solutions engineer for teams, organizations, and enterprises.
+It focuses on the work around a changing codebase: explaining products, keeping documentation current, investigating user-reported issues, running checks, identifying root causes, and proposing code, test, example, configuration, or documentation changes through reviewable pull requests.
+Ronin can communicate with both company members and external product users. Access is scoped: an unconnected public conversation has no company knowledge or repository access, while connected workspaces explicitly control which channels, users, repositories, and actions are allowed.
+Ronin combines capabilities associated with documentation agents, coding agents, and company knowledge systems, but stays focused on solutions engineering.
+`;
 
-  if (/how (do you|does ronin)|how.*work/.test(question)) {
-    return `${INTRO} When an authorized workspace connects a channel and repository, I can investigate questions, run checks, and propose code or documentation changes through pull requests.`;
-  }
+export function buildPublicRoninPrompt(message: string) {
+  return `You are Ronin speaking in an unconnected public Slack DM.
+Be conversational, direct, and concise. Continue the conversation naturally instead of repeating an introduction.
+Answer only from the public product brief below and general conversational context. Do not claim access to any company, repository, knowledge base, conversation, tool, or private information. Do not run tools, inspect files, or perform work. If the user asks for private or company-specific information, explain that an operator must connect and authorize their workspace first.
 
-  if (/access|private|privacy|permission|secure|knowledge/.test(question)) {
-    return "This DM is in public mode. I can explain Ronin, but I cannot access any company’s repositories, knowledge, conversations, or tools unless an operator explicitly connects and authorizes this conversation.";
-  }
+Public product brief:
+${PUBLIC_BRIEF.trim()}
 
-  if (/connect|setup|set up|get started|use ronin/.test(question)) {
-    return "To use Ronin with a company, an operator connects its GitHub and Slack workspace, maps approved channels to repositories, and chooses what Ronin may read or change. Until then, this DM stays in public mode.";
-  }
+User message:
+${message.trim()}`;
+}
 
-  if (/what.*(do|are)|who are you|what is ronin/.test(question)) return INTRO;
-
-  return `${INTRO} This DM is not connected to a company workspace, so I’m in public mode and cannot access private knowledge or repositories. You can ask what I do, how I work, or how to connect Ronin.`;
+export async function answerPublicRoninMessage(input: {
+  message: string;
+  teamId: string;
+  channelId: string;
+  eventId: string;
+}) {
+  const result = await runCentaurTask({
+    threadKey: buildThreadKey(["public", "slack", input.teamId, input.channelId]),
+    idempotencyKey: `public-slack-${input.teamId}-${input.channelId}-${input.eventId}`,
+    prompt: buildPublicRoninPrompt(input.message),
+  });
+  return result.rawOutput;
 }
