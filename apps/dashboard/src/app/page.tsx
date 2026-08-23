@@ -1,4 +1,5 @@
 import { ConfigureActions } from "@/components/configure-actions";
+import { getOperatorSession } from "@/lib/auth";
 import { GitHubInstallSync } from "@/components/github-install-sync";
 import { GitHubRepoActions } from "@/components/github-repo-actions";
 import { StatusPill } from "@/components/status-pill";
@@ -14,6 +15,7 @@ import {
 import type { ActivityEvent } from "@/lib/dashboard-data";
 import { ExternalLink } from "lucide-react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +24,7 @@ export default async function Home({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  if (!(await getOperatorSession())) redirect("/login");
   const resolvedSearchParams = await searchParams;
   const installationId = getSingleSearchParam(resolvedSearchParams?.installation_id);
   const [workspace, dbRun, activity, slack, telegram] = await Promise.all([
@@ -57,6 +60,9 @@ export default async function Home({
                 Start
               </a>
               <ThemeToggle />
+              <form action="/api/auth/logout" method="post">
+                <button className="ronin-button" type="submit">Sign out</button>
+              </form>
             </nav>
           </div>
         </header>

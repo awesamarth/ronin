@@ -1,8 +1,11 @@
+import { authorizeMutation } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
+  const unauthorized = await authorizeMutation(request);
+  if (unauthorized) return unauthorized;
   try {
     const body = (await request.json()) as {
       channelId?: string;
@@ -91,6 +94,8 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const unauthorized = await authorizeMutation(request);
+  if (unauthorized) return unauthorized;
   try {
     const body = (await request.json()) as { id?: string };
     const id = body.id?.trim();

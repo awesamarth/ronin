@@ -107,13 +107,14 @@ cp apps/dashboard/.env.example apps/dashboard/.env
 
 Important values:
 
-- `DATABASE_URL`: local SQLite by default.
-- `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_WEBHOOK_SECRET`: GitHub App configuration.
+- `DATABASE_URL`: required PostgreSQL connection string.
+- `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_WEBHOOK_SECRET`: GitHub App and operator OAuth configuration. Set the callback URL to `/api/auth/github/callback` on `RONIN_BASE_URL`.
 - `GITHUB_APP_PRIVATE_KEY` or `GITHUB_APP_PRIVATE_KEY_PATH`: private key used only on the backend.
+- `RONIN_SESSION_SECRET`, `RONIN_ALLOWED_GITHUB_USERS`: signed operator sessions and the GitHub-login allowlist.
 - `SLACK_APP_TOKEN`, `SLACK_BOT_TOKEN`: Slack Socket Mode connector.
 - Telegram token variables if running the Telegram connector.
-- `CENTAUR_API_URL`, `CENTAUR_API_KEY`: Centaur execution backend configuration.
-- `RONIN_HARNESS`: default harness label (defaults to `pi`).
+- `CENTAUR_API_URL`, `CENTAUR_API_KEY`: Centaur execution backend configuration. `ronin:*` sessions currently require an admin- or Console-capable credential; a Slack ingress key is prefix-restricted and will not work.
+- `RONIN_HARNESS`: fallback harness (defaults to `pi`); repositories may override harness/model/provider/reasoning.
 - Optional `RONIN_MODEL`, `RONIN_PROVIDER`, `RONIN_REASONING`, `CENTAUR_TIMEOUT_MS`.
 
 Do not expose the GitHub private key, Slack tokens, Telegram token, database, or local `key.pem` to the browser or commit them to Git.
@@ -129,7 +130,7 @@ The current build is real for:
 - Slack and Telegram channel-to-repo routing.
 - Slack action requests opening code/docs PRs.
 
-Production still needs a hosted database, a deployed dashboard/webhook URL, long-running connector/worker processes, auth/tenant isolation for external users, and a queue-backed worker model for heavier runs.
+The dashboard now requires PostgreSQL and allowlisted GitHub OAuth. GitHub work is atomically claimed by the worker and safely retried through Centaur idempotency. Deployment still needs hosted process supervision, a public webhook URL, per-customer operator membership beyond the current allowlist, and a scoped Centaur `ronin:` service identity instead of an admin-capable credential.
 
 ## Positioning
 

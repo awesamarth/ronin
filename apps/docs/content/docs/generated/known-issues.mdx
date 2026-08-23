@@ -21,13 +21,15 @@ The local demo runs with:
 
 ## Tenant model
 
-The current dashboard assumes a local operator surface and mostly uses the first configured org. A production version needs real auth, org switching, install ownership, and cleaner customer onboarding.
+The operator console uses allowlisted GitHub OAuth, but it still mostly uses the first configured org. Customer-facing operation needs org switching, install ownership, and membership roles beyond the deployment-wide allowlist.
 
 ## Background work
 
-Webhook and support-message paths can process workspace runs now, but production should move long-running execution work to a queue and worker.
+GitHub runs are atomically claimed from PostgreSQL by a worker and stale runs can safely replay the same Centaur idempotency keys. Support messages still run inline in their connector process; high-volume deployments may move those turns to the same worker pattern.
 
-That keeps HTTP request lifecycles short and gives better retry, cancellation, and progress reporting.
+## Centaur service identity
+
+Centaur currently requires an admin- or Console-capable credential for Ronin's `ronin:*` session keys. A dedicated prefix-scoped Ronin ingress identity should replace that broad credential upstream.
 
 ## Execution policy profiles
 

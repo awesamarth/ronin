@@ -10,7 +10,7 @@ Ronin is a Bun workspace with two Next.js apps:
 - `apps/docs`: the Fumadocs documentation app.
 - `skills/ronin`: the Ronin skill used by the execution agent.
 
-Ronin's core responsibility is routing and control: orgs, GitHub installations, watched repos, channel mappings, run records, artifacts, audit logs, and product policy. The execution agent handles reasoning and edits only after Ronin has resolved the target context. Repo execution is delegated to Centaur; Ronin is harness-agnostic.
+Ronin's core responsibility is routing and control: orgs, GitHub installations, watched repos, channel mappings, run records, artifacts, audit logs, and product policy. PostgreSQL is required. The operator console uses allowlisted GitHub OAuth. The execution agent handles reasoning and edits only after Ronin has resolved the target context. Repo execution is delegated to Centaur; Ronin is harness-agnostic.
 
 ## Commands
 
@@ -41,6 +41,7 @@ bun run --cwd apps/dashboard telegram:connector
 - Never put GitHub App private keys, Slack tokens, or Telegram tokens in client components or `NEXT_PUBLIC_*` variables.
 - GitHub App private key handling belongs on the server side only.
 - Never pass a GitHub installation token through prompts, metadata, session messages, or the Centaur API. Ronin uses its GitHub App token server-side for compare and PR API calls.
+- Treat `CENTAUR_API_KEY` as a privileged service credential. Until Centaur has a scoped `ronin:` ingress identity, it must be admin- or Console-capable and stay server-only.
 - Keep generated demo scratch files out of the public repo unless the user explicitly asks to publish them.
 
 ## Implementation Notes
