@@ -30,5 +30,5 @@ export async function answerPublicRoninMessage(input: {
     idempotencyKey: `public-slack-${input.teamId}-${input.channelId}-${input.eventId}`,
     prompt: buildPublicRoninPrompt(input.message),
   });
-  return result.rawOutput;
+  return { reply: result.rawOutput, config: result.config };
 }

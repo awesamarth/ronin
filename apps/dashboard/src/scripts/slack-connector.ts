@@ -4,6 +4,7 @@ import { App } from "@slack/bolt";
 import { ingestSupportMessage } from "../lib/message-ingest";
 import { prisma } from "../lib/prisma";
 import { answerPublicRoninMessage } from "../lib/public-ronin";
+import { withSlackExecutionFooter } from "../lib/slack-execution-footer";
 
 type SlackMessageEvent = {
   bot_id?: string;
@@ -50,14 +51,15 @@ async function handleSlackMessage(input: { client: App["client"]; event: SlackMe
 
   try {
     if (mode === "dm" && !(await isMappedChannel(teamId, event.channel))) {
+      const result = await answerPublicRoninMessage({
+        message: event.text,
+        teamId,
+        channelId: event.channel,
+        eventId: event.ts ?? event.thread_ts ?? crypto.randomUUID(),
+      });
       await client.chat.postMessage({
         channel: event.channel,
-        text: await answerPublicRoninMessage({
-          message: event.text,
-          teamId,
-          channelId: event.channel,
-          eventId: event.ts ?? event.thread_ts ?? crypto.randomUUID(),
-        }),
+        text: withSlackExecutionFooter(result.reply, result.config),
         thread_ts: event.thread_ts ?? event.ts,
       });
       console.log(JSON.stringify({ event: "slack.public_answered", teamId, channelId: event.channel }));
@@ -68,7 +70,6 @@ async function handleSlackMessage(input: { client: App["client"]; event: SlackMe
       getChannelName(client, event.channel),
       getUserName(client, event.user),
     ]);
-
 
     const result = await ingestSupportMessage({
       platform: "slack",
@@ -82,7 +83,7 @@ async function handleSlackMessage(input: { client: App["client"]; event: SlackMe
 
     await client.chat.postMessage({
       channel: event.channel,
-      text: result.reply,
+      text: withSlackExecutionFooter(result.reply, result.executionConfig),
       thread_ts: event.thread_ts ?? event.ts,
     });
 

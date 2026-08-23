@@ -27,6 +27,12 @@ export type CentaurResult = {
   executionId: string;
   rawOutput: string;
   backend: string;
+  config: {
+    harness: string;
+    model?: string;
+    provider?: string;
+    reasoning?: string;
+  };
 };
 
 export type CentaurExecutionConfig = {
@@ -146,6 +152,7 @@ export async function runCentaurTask(input: {
     executionId,
     rawOutput,
     backend: `centaur/${config.harness}`,
+    config,
   };
 }
 

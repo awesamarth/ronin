@@ -199,7 +199,8 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
         prUrl,
         reply: actionReply,
         runId: run.id,
-        runnerBackend: options.runnerBackend,
+        runnerBackend: workspaceResult.runnerBackend,
+        executionConfig: workspaceResult.executionConfig,
       };
     };
 
@@ -308,6 +309,7 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
       intent,
       runId: run.id,
       runnerBackend: agent.backend,
+      executionConfig: agent.config,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Support message processing failed.";

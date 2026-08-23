@@ -130,6 +130,8 @@ export async function runGithubWorkspaceMaintenance(input: WorkspaceRunInput): P
     pushed: report.pushed,
     testLog,
     workspace: threadKey,
+    runnerBackend: result.backend,
+    executionConfig: result.config,
   };
 }
 
