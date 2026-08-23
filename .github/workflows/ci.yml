@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: ronin
+          POSTGRES_PASSWORD: ${{ github.sha }}
+          POSTGRES_USER: ronin
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ronin -d ronin"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://ronin:${{ github.sha }}@127.0.0.1:5432/ronin
+      RONIN_ALLOWED_GITHUB_USERS: ci
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "RONIN_SESSION_SECRET=${GITHUB_SHA}${GITHUB_SHA}" >> "$GITHUB_ENV"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - run: bun run --cwd apps/dashboard db:generate
+      - run: cd apps/dashboard && bunx prisma migrate deploy
+      - run: bun test apps/dashboard/src/lib/auth.test.ts apps/dashboard/src/lib/centaur-client.test.ts
+      - run: bun run lint
+      - run: bun run build
+      - run: cp apps/dashboard/.env.example apps/dashboard/.env && POSTGRES_PASSWORD="$GITHUB_SHA" docker compose config -q
+      - run: docker build -t ronin:ci .
