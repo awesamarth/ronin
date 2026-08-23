@@ -1,68 +1,24 @@
 ---
 title: Run Report
-description: What the current Ronin demo proves end to end.
+description: What Ronin does end to end.
 ---
 
 # Run Report
 
-Ronin is an agentic solutions engineering control plane around Hermes.
+Ronin is an agentic solutions engineering control plane around the execution agent.
 
-The demo proves that Ronin can take a real company context, route work to the right repo, run Hermes inside a sandbox, and return an auditable GitHub PR.
-
-## Verified repo
-
-```text
-awesamarth/status-page-sdk
-```
-
-## Verified Slack route
-
-```text
-C0BDFU1BXMZ / #status-page -> awesamarth/status-page-sdk
-```
-
-## Verified sandbox PR
-
-```text
-Run: message-1782646813711
-Backend: nemohermes
-Sandbox workspace: /sandbox/ronin-runs/message-1782646813711
-Branch: ronin/patch-message-1782646813711
-Commit: ed98dd0d6bc4053c1f808b754d992bf14b13dc43
-PR: https://github.com/awesamarth/status-page-sdk/pull/3
-```
-
-Changed files:
-
-- `README.md`
-- `src/app/page.tsx`
-- `CHANGELOG.md`
-
-## Sandbox checks
-
-The PR body is generated from Ronin's deterministic runner checks, not Hermes' narrative.
-
-Verified checks in NemoHermes/OpenShell:
-
-```text
-bun --version
-bun install --frozen-lockfile
-bun run lint
-bun run build
-```
-
-All passed for PR #3.
+Ronin can take a real company context, route work to the right repo, run the agent through Centaur, and return an auditable GitHub PR.
 
 ## Security boundary
 
 Ronin keeps long-lived secrets on the backend.
 
-The sandbox receives only the short-lived GitHub App installation token needed for the scoped repo clone and branch push. The GitHub App private key, Slack token, Telegram token, and database credentials stay outside the sandbox.
+The Centaur agent receives a `GITHUB_TOKEN` scoped to the repo clone and branch push. Configuring this token in Centaur is an operator requirement; Ronin does not provision it. The GitHub App private key, Slack token, Telegram token, and database credentials stay outside the agent. Ronin never passes a GitHub installation token through prompts, metadata, session messages, or the Centaur API.
 
 ## Product behavior
 
 - GitHub App install defines repo access.
 - Channel mappings define which repo a support conversation belongs to.
 - Ronin stores runs, artifacts, PR links, and audit events.
-- Hermes performs implementation work only after Ronin resolves org, repo, channel, and allowed action.
-- PRs are opened from real sandbox file edits, not generated report placeholders.
+- The agent performs implementation work only after Ronin resolves org, repo, channel, and allowed action.
+- PRs are opened from real workspace file edits, not generated report placeholders.

@@ -1,5 +1,4 @@
 interface:
   display_name: "Ronin"
   short_description: "Solutions engineer for protocol teams"
-  brand_color: "#2A4B3F"
-  default_prompt: "Use $ronin to answer builder questions, maintain docs and known issues, process GitHub changes, and draft safe PR/provisioning plans for this protocol."
+  default_prompt: "Use $ronin to answer builder questions, maintain docs and known issues, process GitHub changes, and draft safe PR plans for this protocol."

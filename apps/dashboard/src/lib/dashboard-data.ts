@@ -43,25 +43,6 @@ export type ActivityEvent = {
   metadata: Record<string, unknown>;
 };
 
-export type ProvisioningStatus = {
-  id: string;
-  status: string;
-  summary: string;
-  createdAt: string;
-  repo: string | null;
-  input: {
-    budgetCents?: number;
-    provider?: string;
-    purpose?: string;
-    resource?: string;
-  };
-  artifacts: Array<{
-    content: string;
-    kind: string;
-    title: string;
-  }>;
-};
-
 export type WorkspaceOverview = {
   orgName: string;
   orgSlug: string;
@@ -196,8 +177,6 @@ export async function getActivityFeed(): Promise<ActivityEvent[]> {
           "run.blocked",
           "github.pull_request_opened",
           "github.pull_request_failed",
-          "provisioning.plan_created",
-          "provisioning.approved",
         ],
       },
     },
@@ -213,50 +192,6 @@ export async function getActivityFeed(): Promise<ActivityEvent[]> {
     runId: log.runId,
     target: log.target,
   }));
-}
-
-export async function getLatestProvisioningStatus(): Promise<ProvisioningStatus | null> {
-  const run = await prisma.run.findFirst({
-    include: {
-      artifacts: {
-        orderBy: {
-          createdAt: "desc",
-        },
-        take: 3,
-      },
-      repo: true,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-    where: {
-      kind: "provisioning.stripe_plan",
-    },
-  });
-
-  if (!run) return null;
-
-  return {
-    artifacts: run.artifacts.map((artifact) => ({
-      content: artifact.content,
-      kind: artifact.kind,
-      title: artifact.title,
-    })),
-    createdAt: run.createdAt.toISOString(),
-    id: run.id,
-    input: parseProvisioningInput(run.input),
-    repo: run.repo?.fullName ?? null,
-    status: run.status,
-    summary: run.summary ?? "Provisioning plan created.",
-  };
-}
-
-function parseProvisioningInput(input: string): ProvisioningStatus["input"] {
-  try {
-    return JSON.parse(input) as ProvisioningStatus["input"];
-  } catch {
-    return {};
-  }
 }
 
 function parseMetadata(metadata: string | null): Record<string, unknown> {

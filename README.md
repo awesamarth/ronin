@@ -1,12 +1,8 @@
 # Ronin
 
-Ronin is an agentic solutions engineer for protocol teams, devtool companies, and enterprise engineering orgs. It is not trying to replace human solutions engineers; it is meant to offload the repeatable parts of the job: watching repos, keeping docs current, answering builder questions, proposing fixes, opening PRs, and staging infrastructure spend behind approval gates.
+Ronin is an agentic solutions engineer for protocol teams, devtool companies, and enterprise engineering orgs. It is not trying to replace human solutions engineers; it is meant to offload the repeatable parts of the job: watching repos, keeping docs current, answering builder questions, proposing fixes, and opening PRs.
 
-Ronin sits around Hermes as the product and control plane. Ronin owns tenants, GitHub App installations, repository routing, support-channel mappings, artifacts, audit logs, and spend policy. Hermes does the reasoning and repo work after Ronin has resolved the right org, repo, channel, and allowed action.
-
-## Video Demo
-
-[Watch the Ronin demo on X](https://x.com/awesamarth_/status/2071708541464011037)
+Ronin sits around the execution agent as the product and control plane. Ronin owns tenants, GitHub App installations, repository routing, support-channel mappings, artifacts, audit logs, and product policy. The agent does the reasoning and repo work after Ronin has resolved the right org, repo, channel, and allowed action. Repo execution is delegated to Centaur: the operator must configure Centaur with a scoped GitHub token, after which it clones repos, runs checks, commits, and pushes.
 
 ## What It Does
 
@@ -16,32 +12,27 @@ Ronin sits around Hermes as the product and control plane. Ronin owns tenants, G
 - Reacts to pushes by comparing diffs, updating docs/changelogs, and refreshing support knowledge.
 - Answers Slack and Telegram questions using the mapped repository context.
 - Turns maintainer requests in Slack or Telegram into repo changes and PRs.
-- Stages Stripe Projects provisioning plans with explicit approval instead of silently spending money.
-- Runs repo work inside a NemoHermes/OpenShell sandbox for clone, edit, checks, commit, and push.
+- Runs repo work (clone, edit, checks, commit, push) through Centaur.
 
 ## How It Works
 
 ### Repository Onboarding
 
-An org installs the Ronin GitHub App and chooses which repositories Ronin can access. GitHub sends an installation webhook, Ronin maps the installation to an org and watched repo, creates a repository onboarding run, and starts Hermes inside the NemoHermes sandbox.
+An org installs the Ronin GitHub App and chooses which repositories Ronin can access. GitHub sends an installation webhook, Ronin maps the installation to an org and watched repo, creates a repository onboarding run, and starts a Centaur execution.
 
-Ronin mints a short-lived GitHub App installation token for that run. The sandbox uses it to clone the repo, run Hermes with the Ronin skill, edit files, run checks, commit to a `ronin/patch-*` branch, and push. Ronin then opens the GitHub PR and stores artifacts for the dashboard and future context.
+The Centaur agent clones the repo using its operator-configured `GITHUB_TOKEN`, edits files, runs checks, commits to a `ronin/patch-*` branch, and pushes. Ronin then uses its own GitHub App installation token server-side to open the GitHub PR and stores artifacts for the dashboard and future context.
 
 ### Push Handling
 
-When a developer pushes to a watched repo, GitHub sends a push webhook with the before and after SHAs. Ronin fetches the compare diff, creates a `github.push` run, and gives Hermes the repo context plus the change summary.
+When a developer pushes to a watched repo, GitHub sends a push webhook with the before and after SHAs. Ronin fetches the compare diff, creates a `github.push` run, and gives the agent the repo context plus the change summary.
 
-Hermes can identify docs drift, API changes, changelog entries, broken examples, or support knowledge updates. If a follow-up is needed, the sandbox edits the repository and Ronin opens another PR.
+The agent can identify docs drift, API changes, changelog entries, broken examples, or support knowledge updates. If a follow-up is needed, a Centaur workspace run edits the repository and Ronin opens another PR.
 
 ### Slack And Telegram
 
-Support channels are mapped to repositories in Ronin's database. A Slack channel or Telegram chat does not rely on Hermes memory to guess the repo. Ronin resolves the platform team/chat/channel ID to an org and default repository first.
+Support channels are mapped to repositories in Ronin's database. A Slack channel or Telegram chat does not rely on the agent's memory to guess the repo. Ronin resolves the platform team/chat/channel ID to an org and default repository first, then invokes the Centaur execution seam.
 
-If the message is a question, Ronin passes scoped repo artifacts and context to Hermes and replies in the channel. If the message is an action request, such as "add a helper method" or "fix the README", Ronin routes it to the workspace runner so Hermes can edit the repo and Ronin can open a PR.
-
-### Spend And Provisioning
-
-Ronin includes a staged Stripe Projects flow for provisioning resources such as hosted services. Hermes can produce a concrete provisioning plan and command, but the demo path records it as approval-required and non-executed. The point is to show that the agent can plan real operational spend while Ronin keeps execution behind policy.
+If the message is a question, Ronin passes scoped repo artifacts and context to the agent and replies in the channel. If the message is an action request, such as "add a helper method" or "fix the README", Ronin routes it to the workspace runner so the agent can edit the repo and Ronin can open a PR.
 
 ## Architecture
 
@@ -52,14 +43,13 @@ GitHub App / Slack / Telegram
 Ronin dashboard and API
   - org, repo, and channel routing
   - GitHub webhook verification
-  - short-lived GitHub App tokens
+  - short-lived GitHub App tokens (server-side)
   - run/artifact/audit storage
-  - provisioning approval gates
         |
         v
-NemoHermes / OpenShell sandbox
-  - clone repository
-  - run Hermes with Ronin skill
+Centaur execution
+  - clone repository (operator-configured GITHUB_TOKEN)
+  - run agent with Ronin skill
   - edit code/docs/changelog
   - run checks
   - commit and push branch
@@ -70,9 +60,9 @@ GitHub PR / Slack reply / Telegram reply / dashboard artifacts
 
 ## Apps
 
-- `apps/dashboard`: Next.js control plane for GitHub App state, watched repos, latest agent work, support-channel mappings, and staged provisioning.
+- `apps/dashboard`: Next.js control plane for GitHub App state, watched repos, latest agent work, and support-channel mappings.
 - `apps/docs`: Fumadocs documentation surface.
-- `skills/ronin`: Hermes skill used during Ronin repo work.
+- `skills/ronin`: skill used during Ronin repo work.
 
 ## Local Setup
 
@@ -122,23 +112,24 @@ Important values:
 - `GITHUB_APP_PRIVATE_KEY` or `GITHUB_APP_PRIVATE_KEY_PATH`: private key used only on the backend.
 - `SLACK_APP_TOKEN`, `SLACK_BOT_TOKEN`: Slack Socket Mode connector.
 - Telegram token variables if running the Telegram connector.
-- NemoHermes/OpenShell settings for sandbox execution.
+- `CENTAUR_API_URL`, `CENTAUR_API_KEY`: Centaur execution backend configuration.
+- `RONIN_HARNESS`: default harness label (defaults to `pi`).
+- Optional `RONIN_MODEL`, `RONIN_PROVIDER`, `RONIN_REASONING`, `CENTAUR_TIMEOUT_MS`.
 
 Do not expose the GitHub private key, Slack tokens, Telegram token, database, or local `key.pem` to the browser or commit them to Git.
 
-## Demo Status
+## Status
 
-The current demo path is real for:
+The current build is real for:
 
 - GitHub App installation sync.
 - GitHub webhooks for repository onboarding and pushes.
-- Sandbox clone/edit/check/commit/push.
+- Centaur-driven clone/edit/check/commit/push.
 - PR creation from Ronin branches.
 - Slack and Telegram channel-to-repo routing.
 - Slack action requests opening code/docs PRs.
-- Staged Stripe provisioning plans.
 
-The current local build is still a hackathon prototype. Production deployment still needs a hosted database, a deployed dashboard/webhook URL, long-running connector/worker processes, auth/tenant isolation for external users, and a queue-backed worker model for heavier runs.
+Production still needs a hosted database, a deployed dashboard/webhook URL, long-running connector/worker processes, auth/tenant isolation for external users, and a queue-backed worker model for heavier runs.
 
 ## Positioning
 

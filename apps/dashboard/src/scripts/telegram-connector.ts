@@ -145,7 +145,7 @@ async function handleUpdate(update: TelegramUpdate) {
       chat_id: message.chat.id,
       message_thread_id: message.message_thread_id,
       reply_to_message_id: message.message_id,
-      text: `Ronin failed to answer this one: ${text}`,
+      text: "Ronin could not process this message right now. The failure has been logged for maintainers.",
     });
   }
 }

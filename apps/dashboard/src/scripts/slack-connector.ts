@@ -84,7 +84,7 @@ async function handleSlackMessage(input: { client: App["client"]; event: SlackMe
     console.error(JSON.stringify({ event: "slack.support_failed", channelId: event.channel, error: message }));
     await client.chat.postMessage({
       channel: event.channel,
-      text: `Ronin failed to answer this one: ${message}`,
+      text: "Ronin could not process this message right now. The failure has been logged for maintainers.",
       thread_ts: event.thread_ts ?? event.ts,
     });
   }

@@ -1,15 +1,15 @@
 ---
 title: Known Gaps
-description: Current demo boundaries and production gaps.
+description: Current boundaries and production gaps.
 ---
 
 # Known Gaps
 
-Ronin's current demo path is real, but it is still a local-first hackathon build.
+Ronin's current build is real, but it is still a local-first prototype.
 
 ## Deployment
 
-The dashboard, database, GitHub webhook URL, Slack connector, Telegram connector, and NemoHermes/OpenShell runner still need a production deployment plan.
+The dashboard, database, GitHub webhook URL, Slack connector, Telegram connector, and Centaur execution backend still need a production deployment plan.
 
 The local demo runs with:
 
@@ -17,7 +17,7 @@ The local demo runs with:
 - Docs on `localhost:3005/docs`
 - Slack Socket Mode connector
 - Telegram long-polling connector
-- NemoHermes/OpenShell sandbox named `hermes`
+- Centaur execution backend
 
 ## Tenant model
 
@@ -25,24 +25,18 @@ The current dashboard assumes a local operator surface and mostly uses the first
 
 ## Background work
 
-Webhook and support-message paths can process workspace runs now, but production should move long-running sandbox work to a queue and worker.
+Webhook and support-message paths can process workspace runs now, but production should move long-running execution work to a queue and worker.
 
 That keeps HTTP request lifecycles short and gives better retry, cancellation, and progress reporting.
 
-## Sandbox policy profiles
+## Execution policy profiles
 
-The current verified policy supports the JS/Next demo repo: Bun, npm/yarn registries, Node, curl, and Google Fonts for Next/font.
+The current path supports JS/Next repos via the execution agent.
 
-Production Ronin should detect repo stacks and apply policy profiles for ecosystems such as Python, Rust, Go, and Java instead of manually adjusting sandbox policy per repo.
+Production Ronin should detect repo stacks and apply policy profiles for ecosystems such as Python, Rust, Go, and Java.
 
 ## Support routing UI
 
 Slack and Telegram mappings are DB-backed and functional, but the UI is still operator-oriented.
 
 A customer-ready flow should guide users through selecting a workspace, channel, repo, and allowed actions without exposing too much internal vocabulary.
-
-## Approval policy
-
-Ronin records budget-capped provisioning plans and approvals. The broader approval model for PR comments, deploys, paid APIs, and infrastructure changes is still basic.
-
-For the demo, the important invariant is that Ronin does not silently create paid resources.
