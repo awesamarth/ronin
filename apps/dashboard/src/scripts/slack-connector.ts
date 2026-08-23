@@ -3,6 +3,7 @@ import "dotenv/config";
 import { App } from "@slack/bolt";
 import { ingestSupportMessage } from "../lib/message-ingest";
 import { prisma } from "../lib/prisma";
+import { answerPublicRoninMessage } from "../lib/public-ronin";
 
 type SlackMessageEvent = {
   bot_id?: string;
@@ -46,12 +47,24 @@ async function handleSlackMessage(input: { client: App["client"]; event: SlackMe
   if (event.bot_id || event.subtype) return;
 
   const teamId = event.team ?? process.env.SLACK_TEAM_ID ?? "unknown-team";
-  const [channelName, userName] = await Promise.all([
-    getChannelName(client, event.channel),
-    getUserName(client, event.user),
-  ]);
 
   try {
+    if (mode === "dm" && !(await isMappedChannel(teamId, event.channel))) {
+      await client.chat.postMessage({
+        channel: event.channel,
+        text: answerPublicRoninMessage(event.text),
+        thread_ts: event.thread_ts ?? event.ts,
+      });
+      console.log(JSON.stringify({ event: "slack.public_answered", teamId, channelId: event.channel }));
+      return;
+    }
+
+    const [channelName, userName] = await Promise.all([
+      getChannelName(client, event.channel),
+      getUserName(client, event.user),
+    ]);
+
+
     const result = await ingestSupportMessage({
       platform: "slack",
       platformTeamId: teamId,
@@ -92,6 +105,21 @@ async function handleSlackMessage(input: { client: App["client"]; event: SlackMe
 
 function stripBotMention(text: string) {
   return text.replace(/<@[A-Z0-9]+>/g, "").trim();
+}
+
+async function isMappedChannel(teamId: string, channelId: string) {
+  return Boolean(
+    await prisma.channel.findUnique({
+      select: { id: true },
+      where: {
+        platform_platformTeamId_platformChannelId: {
+          platform: "slack",
+          platformTeamId: teamId,
+          platformChannelId: channelId,
+        },
+      },
+    }),
+  );
 }
 
 async function getChannelName(client: App["client"], channel: string) {
