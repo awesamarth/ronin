@@ -77,7 +77,7 @@ The dashboard is an operator console, not a marketing landing page.
 ## TODO
 
 - Add authorized Slack thread commands for inspecting and overriding harness, model, provider, and reasoning (`/ronin settings`, `/ronin model`, `/ronin reasoning`, `/ronin reset`). Public/external users must remain on operator-controlled defaults.
-- Add organization memberships and roles so public users, external support users, internal members, and operators receive explicitly different repository, knowledge, and action permissions.
+- Deferred: add organization memberships and roles before internal and external users can share channels or repository context. For now, assume external users and employees use separate Slack channels.
 - Replace manual DM channel-ID mappings with an authorized onboarding and repository-selection flow.
 - Add a restricted public-conversation execution profile that cannot access company repositories, tools, or credentials; prompt instructions alone are not a security boundary.
 - Add a scoped `ronin:` Centaur service identity and renewable authentication instead of Console/admin-capable temporary credentials.
