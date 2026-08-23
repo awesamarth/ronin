@@ -29,6 +29,13 @@ export type CentaurResult = {
   backend: string;
 };
 
+export type CentaurExecutionConfig = {
+  harness?: string;
+  model?: string | null;
+  provider?: string | null;
+  reasoning?: string | null;
+};
+
 /**
  * Build a deterministic thread key namespaced with a colon (`ronin:<sanitized>`),
  * sanitized to [a-zA-Z0-9_-] and truncated to <=512 UTF-8 bytes. Sanitized
@@ -63,10 +70,13 @@ export async function runCentaurTask(input: {
   prompt: string;
   timeoutMs?: number;
   idempotencyKey?: string;
+  config?: CentaurExecutionConfig;
+  onExecutionStarted?: (execution: { threadKey: string; executionId: string }) => unknown | Promise<unknown>;
 }): Promise<CentaurResult> {
   if (!CENTAUR_API_KEY()) throw new Error("CENTAUR_API_KEY is required.");
 
   const timeoutMs = input.timeoutMs ?? CENTAUR_TIMEOUT_MS();
+  const config = resolvedConfig(input.config);
   const controller = new AbortController();
   const timeout = AbortSignal.timeout(timeoutMs);
   // Either our own abort or the timeout signal fires.
@@ -81,7 +91,7 @@ export async function runCentaurTask(input: {
     method: "POST",
     headers: centaurHeaders(),
     body: JSON.stringify({
-      harness_type: RONIN_HARNESS(),
+      harness_type: config.harness,
       metadata: { source: "ronin" },
       on_harness_conflict: "reject",
     }),
@@ -92,7 +102,8 @@ export async function runCentaurTask(input: {
   }
 
   // 2. Append user message with a unique client id.
-  const clientId = crypto.randomUUID();
+  const idempotencyKey = input.idempotencyKey ?? crypto.randomUUID();
+  const clientId = stableClientMessageId(idempotencyKey);
   const messageRes = await fetch(`${baseUrl}/api/session/${encodedKey}/messages`, {
     method: "POST",
     headers: centaurHeaders(),
@@ -113,11 +124,10 @@ export async function runCentaurTask(input: {
   }
 
   // 3. Execute idempotently under a stable key.
-  const idempotencyKey = input.idempotencyKey ?? crypto.randomUUID();
   const execRes = await fetch(`${baseUrl}/api/session/${encodedKey}/execute`, {
     method: "POST",
     headers: centaurHeaders(),
-    body: JSON.stringify(executeBody({ clientId, idempotencyKey, prompt: input.prompt, timeoutMs, threadKey })),
+    body: JSON.stringify(executeBody({ clientId, config, idempotencyKey, prompt: input.prompt, timeoutMs, threadKey })),
     signal: controller.signal,
   });
   if (!execRes.ok) {
@@ -126,6 +136,7 @@ export async function runCentaurTask(input: {
   const execBody = (await execRes.json()) as { execution_id?: string };
   const executionId = execBody.execution_id;
   if (!executionId) throw new CentaurError("Execute response missing execution_id.", JSON.stringify(execBody));
+  await input.onExecutionStarted?.({ threadKey, executionId });
 
   // 4. Consume SSE event stream until a terminal event.
   const rawOutput = await consumeSseStream({ baseUrl, encodedKey, executionId, signal: controller.signal, timeoutMs });
@@ -134,12 +145,26 @@ export async function runCentaurTask(input: {
     threadKey,
     executionId,
     rawOutput,
-    backend: `centaur/${RONIN_HARNESS()}`,
+    backend: `centaur/${config.harness}`,
   };
+}
+
+function resolvedConfig(config: CentaurExecutionConfig | undefined) {
+  return {
+    harness: config?.harness || RONIN_HARNESS(),
+    model: config?.model || RONIN_MODEL(),
+    provider: config?.provider || RONIN_PROVIDER(),
+    reasoning: config?.reasoning || RONIN_REASONING(),
+  };
+}
+
+function stableClientMessageId(idempotencyKey: string) {
+  return `ronin-${idempotencyKey}`.replace(/[^a-zA-Z0-9_.:-]/g, "-").slice(0, 240);
 }
 
 function executeBody(input: {
   clientId: string;
+  config: ReturnType<typeof resolvedConfig>;
   idempotencyKey: string;
   prompt: string;
   threadKey: string;
@@ -153,17 +178,17 @@ function executeBody(input: {
     trace_metadata: { source: "ronin" },
     message: { role: "user", content: [{ type: "text", text: input.prompt }] },
   };
-  if (RONIN_MODEL()) {
-    metadata.model = RONIN_MODEL();
-    line.model = RONIN_MODEL();
+  if (input.config.model) {
+    metadata.model = input.config.model;
+    line.model = input.config.model;
   }
-  if (RONIN_PROVIDER()) {
-    metadata.provider = RONIN_PROVIDER();
-    line.provider = RONIN_PROVIDER();
+  if (input.config.provider) {
+    metadata.provider = input.config.provider;
+    line.provider = input.config.provider;
   }
-  if (RONIN_REASONING()) {
-    metadata.reasoning = RONIN_REASONING();
-    line.reasoning = RONIN_REASONING();
+  if (input.config.reasoning) {
+    metadata.reasoning = input.config.reasoning;
+    line.reasoning = input.config.reasoning;
   }
   return {
     idempotency_key: input.idempotencyKey,

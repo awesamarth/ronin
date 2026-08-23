@@ -65,6 +65,12 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
       const workspaceResult = await runGithubWorkspaceMaintenance({
         baseBranch: repo.defaultBranch || "main",
         eventName: "message_workspace_request",
+        executionConfig: {
+          harness: repo.harnessType,
+          model: repo.model,
+          provider: repo.provider,
+          reasoning: repo.reasoning,
+        },
         prompt: buildWorkspaceRequestPrompt({
           actionRequest: options.actionRequest,
           channelName: channel.displayName ?? channel.platformChannelId,
@@ -211,6 +217,17 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
       threadKey: buildThreadKey(["support", repo.fullName, run.id]),
       prompt: buildSupportPrompt({ artifacts: recentArtifacts, input, latestRun, repoName: repo.fullName, repoUrl }),
       idempotencyKey: `${run.id}:support`,
+      config: {
+        harness: repo.harnessType,
+        model: repo.model,
+        provider: repo.provider,
+        reasoning: repo.reasoning,
+      },
+      onExecutionStarted: ({ executionId, threadKey }) =>
+        prisma.run.update({
+          where: { id: run.id },
+          data: { centaurExecutionId: executionId, centaurThreadKey: threadKey },
+        }),
     });
     const parsed = parseAgentJson(agent.rawOutput);
     const reply = stringOrFallback(parsed.reply, agent.rawOutput);

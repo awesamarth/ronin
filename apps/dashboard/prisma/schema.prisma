@@ -4,7 +4,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 model Org {
@@ -33,7 +33,11 @@ model Repository {
   defaultBranch  String   @default("main")
   latestKnownSha String?
   watchedEnabled Boolean  @default(true)
-  capabilities   String   @default("docs,pr_review,support_answers")
+  capabilities   String   @default("docs,pr_review,support_answers,try_fix,auto_report_pr")
+  harnessType    String   @default("pi")
+  model          String?
+  provider       String?
+  reasoning      String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -68,19 +72,24 @@ model Channel {
 }
 
 model Run {
-  id          String   @id
-  orgId       String
-  repoId      String?
-  kind        String
-  status      String
-  summary     String?
-  input       String
-  output      String?
-  createdAt   DateTime @default(now())
-  completedAt DateTime?
+  id                 String    @id
+  orgId              String
+  repoId             String?
+  kind               String
+  status             String
+  summary            String?
+  input              String
+  output             String?
+  centaurThreadKey   String?
+  centaurExecutionId String?
+  startedAt          DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  completedAt        DateTime?
+  attempt            Int       @default(0)
 
-  org       Org          @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  repo      Repository?  @relation(fields: [repoId], references: [id], onDelete: SetNull)
+  org       Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  repo      Repository? @relation(fields: [repoId], references: [id], onDelete: SetNull)
   artifacts Artifact[]
   auditLogs AuditLog[]
 
@@ -109,16 +118,16 @@ model Artifact {
 }
 
 model GitHubEvent {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   orgId          String
   repoId         String?
-  deliveryId     String?  @unique
+  deliveryId     String?   @unique
   eventName      String
   action         String?
   installationId String?
   payload        String
   processedAt    DateTime?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
 
   org  Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
   repo Repository? @relation(fields: [repoId], references: [id], onDelete: SetNull)

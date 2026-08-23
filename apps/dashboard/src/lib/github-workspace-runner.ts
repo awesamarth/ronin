@@ -1,4 +1,5 @@
-import { runCentaurTask, buildThreadKey } from "./centaur-client";
+import { runCentaurTask, buildThreadKey, type CentaurExecutionConfig } from "./centaur-client";
+import { prisma } from "./prisma";
 
 export type WorkspaceRunInput = {
   afterSha?: string;
@@ -6,6 +7,7 @@ export type WorkspaceRunInput = {
   beforeSha?: string;
   changelogDraft?: string;
   eventName?: string;
+  executionConfig?: CentaurExecutionConfig;
   prompt: string;
   repo: string;
   runId: string;
@@ -58,6 +60,12 @@ export async function runGithubWorkspaceMaintenance(input: WorkspaceRunInput): P
     prompt: buildWorkspacePrompt({ input, branch }),
     timeoutMs: Number(process.env.RONIN_WORKSPACE_TIMEOUT_MS ?? 600_000),
     idempotencyKey: `${input.runId}:workspace`,
+    config: input.executionConfig,
+    onExecutionStarted: ({ executionId, threadKey: startedThreadKey }) =>
+      prisma.run.update({
+        where: { id: input.runId },
+        data: { centaurExecutionId: executionId, centaurThreadKey: startedThreadKey },
+      }),
   });
 
   const report = parseWorkspaceReport(result.rawOutput);

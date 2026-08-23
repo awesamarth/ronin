@@ -59,46 +59,51 @@ type CompareResponse = {
   }>;
 };
 
+const staleRunningMs = () => Number(process.env.RONIN_GITHUB_WORKER_STALE_RUNNING_MS ?? 900_000);
+
 export async function processLatestQueuedGithubRun() {
-  const run = await prisma.run.findFirst({
-    include: {
-      org: true,
-      repo: true,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-    where: {
-      status: "queued",
-      kind: {
-        startsWith: "github.",
-      },
-    },
-  });
-
-  if (!run) return null;
-
-  return processQueuedGithubRun(run.id);
+  const [claimed] = await prisma.$queryRaw<Array<{ id: string }>>`
+    WITH candidate AS (
+      SELECT id FROM "Run"
+      WHERE kind LIKE 'github.%'
+        AND (
+          status = 'queued'
+          OR (status = 'running' AND "startedAt" < NOW() - (${staleRunningMs()} * INTERVAL '1 millisecond'))
+        )
+      ORDER BY "createdAt" ASC
+      FOR UPDATE SKIP LOCKED
+      LIMIT 1
+    )
+    UPDATE "Run" AS run
+    SET status = 'running', "startedAt" = NOW(), "completedAt" = NULL, attempt = attempt + 1
+    FROM candidate
+    WHERE run.id = candidate.id
+    RETURNING run.id
+  `;
+  return claimed ? processClaimedGithubRun(claimed.id) : null;
 }
 
 export async function processQueuedGithubRun(runId: string) {
-  const run = await prisma.run.findUnique({
-    include: {
-      org: true,
-      repo: true,
-    },
+  const staleBefore = new Date(Date.now() - staleRunningMs());
+  const claimed = await prisma.run.updateMany({
     where: {
       id: runId,
+      kind: { startsWith: "github." },
+      OR: [{ status: "queued" }, { status: "running", startedAt: { lt: staleBefore } }],
     },
+    data: { status: "running", startedAt: new Date(), completedAt: null, attempt: { increment: 1 } },
   });
+  if (claimed.count !== 1) throw new Error(`Run ${runId} is not queued or stale.`);
+  return processClaimedGithubRun(runId);
+}
 
+async function processClaimedGithubRun(runId: string) {
+  const run = await prisma.run.findUnique({
+    include: { org: true, repo: true },
+    where: { id: runId },
+  });
   if (!run) throw new Error(`Run ${runId} was not found.`);
   if (!run.repo) throw new Error(`Run ${runId} is not linked to a repository.`);
-
-  await prisma.run.update({
-    where: { id: run.id },
-    data: { status: "running" },
-  });
 
   try {
     const input = parseRunInput(run.input);
@@ -118,6 +123,17 @@ export async function processQueuedGithubRun(runId: string) {
       threadKey: buildThreadKey(["run", run.repo.fullName, run.id]),
       prompt,
       idempotencyKey: `${run.id}:analyze`,
+      config: {
+        harness: run.repo.harnessType,
+        model: run.repo.model,
+        provider: run.repo.provider,
+        reasoning: run.repo.reasoning,
+      },
+      onExecutionStarted: ({ executionId, threadKey }) =>
+        prisma.run.update({
+          where: { id: run.id },
+          data: { centaurExecutionId: executionId, centaurThreadKey: threadKey },
+        }),
     });
     const parsed = parseAgentJson(agent.rawOutput);
     const artifacts = {
@@ -135,6 +151,12 @@ export async function processQueuedGithubRun(runId: string) {
           beforeSha: input.push?.before ?? input.pullRequest?.base?.sha,
           changelogDraft: artifacts.changelogDraft,
           eventName: input.eventName,
+          executionConfig: {
+            harness: run.repo.harnessType,
+            model: run.repo.model,
+            provider: run.repo.provider,
+            reasoning: run.repo.reasoning,
+          },
           prompt,
           repo: run.repo.fullName,
           runId: run.id,
@@ -317,6 +339,10 @@ async function processRepositoryOnboardingRun(input: {
       capabilities: string;
       defaultBranch: string;
       fullName: string;
+      harnessType: string;
+      model: string | null;
+      provider: string | null;
+      reasoning: string | null;
     } | null;
   };
 }) {
@@ -332,6 +358,12 @@ async function processRepositoryOnboardingRun(input: {
   const workspaceResult = await runGithubWorkspaceMaintenance({
     baseBranch: run.repo.defaultBranch || "main",
     eventName: "repository_onboarded",
+    executionConfig: {
+      harness: run.repo.harnessType,
+      model: run.repo.model,
+      provider: run.repo.provider,
+      reasoning: run.repo.reasoning,
+    },
     prompt,
     repo: run.repo.fullName,
     runId: run.id,
