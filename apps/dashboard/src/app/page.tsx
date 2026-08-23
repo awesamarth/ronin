@@ -1,13 +1,14 @@
 import { ConfigureActions } from "@/components/configure-actions";
+import { getOperatorSession } from "@/lib/auth";
 import { GitHubInstallSync } from "@/components/github-install-sync";
 import { GitHubRepoActions } from "@/components/github-repo-actions";
+import { RepoAgentSettings } from "@/components/repo-agent-settings";
 import { StatusPill } from "@/components/status-pill";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   type DashboardRun,
   getActivityFeed,
   getLatestDashboardRun,
-  getLatestProvisioningStatus,
   getSlackConnection,
   getTelegramConnection,
   getWorkspaceOverview,
@@ -15,6 +16,7 @@ import {
 import type { ActivityEvent } from "@/lib/dashboard-data";
 import { ExternalLink } from "lucide-react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -23,13 +25,13 @@ export default async function Home({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  if (!(await getOperatorSession())) redirect("/login");
   const resolvedSearchParams = await searchParams;
   const installationId = getSingleSearchParam(resolvedSearchParams?.installation_id);
-  const [workspace, dbRun, activity, provisioning, slack, telegram] = await Promise.all([
+  const [workspace, dbRun, activity, slack, telegram] = await Promise.all([
     getWorkspaceOverview(),
     getLatestDashboardRun(),
     getActivityFeed(),
-    getLatestProvisioningStatus(),
     getSlackConnection(),
     getTelegramConnection(),
   ]);
@@ -47,7 +49,7 @@ export default async function Home({
               <h1 className="font-ronin-display text-6xl leading-none md:text-8xl -ml-1">Ronin</h1>
               <p className="mt-2.5 max-w-4xl text-lg leading-8 text-ronin-muted md:text-xl md:leading-9">
                 Agentic solutions engineering for protocol teams. Connect your org, install the GitHub App, map support
-                channels, then let Hermes maintain docs, reviews, answers, and integration work through Ronin.
+                channels, then let the agent maintain docs, reviews, answers, and integration work through Ronin.
               </p>
             </div>
             <nav className="flex shrink-0 items-center gap-2">
@@ -59,6 +61,9 @@ export default async function Home({
                 Start
               </a>
               <ThemeToggle />
+              <form action="/api/auth/logout" method="post">
+                <button className="ronin-button" type="submit">Sign out</button>
+              </form>
             </nav>
           </div>
         </header>
@@ -69,7 +74,7 @@ export default async function Home({
             <SectionLabel>Onboarding</SectionLabel>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight md:text-5xl">Connect your GitHub.</h2>
             <p className="mt-4 max-w-2xl text-sm leading-6 text-ronin-muted">
-              Ronin owns tenant routing, permissions, artifacts, and audit logs. Hermes runs after Ronin has resolved the
+              Ronin owns tenant routing, permissions, artifacts, and audit logs. The agent runs after Ronin has resolved the
               org, channel, repo scope, and allowed action.
             </p>
           </div>
@@ -182,24 +187,23 @@ export default async function Home({
 
           <div className="p-5 md:p-8">
             <SectionLabel>Setup</SectionLabel>
-            <h2 className="mt-3 text-2xl font-semibold tracking-tight">Channels and spend controls.</h2>
+            <h2 className="mt-3 text-2xl font-semibold tracking-tight">Channels.</h2>
             <p className="mt-3 text-sm leading-6 text-ronin-muted">
-              Connector mappings and provisioning controls are setup actions. They stay out of the main work surface.
+              Connector mappings are setup actions. They stay out of the main work surface.
             </p>
             <div className="mt-5">
-              <ConfigureActions provisioning={provisioning} slack={slack} telegram={telegram} />
+              <ConfigureActions slack={slack} telegram={telegram} />
             </div>
             <div className="mt-5 grid border border-ronin-border bg-ronin-panel">
               <FactRow label="Slack" value={slack.configured ? (slack.channels.length ? `${slack.channels.length} mapped` : "Configured") : "Not configured"} />
               <FactRow label="Telegram" value={telegram.configured ? (telegram.chats.length ? `${telegram.chats.length} mapped` : "Configured") : "Not configured"} />
-              <FactRow label="Spend" value={provisioning ? provisioning.status : "Ready"} />
             </div>
           </div>
         </section>
 
         <footer className="flex flex-col gap-2 border-t border-ronin-border px-5 py-4 font-mono text-xs uppercase tracking-[0.22em] text-ronin-muted md:flex-row md:items-center md:justify-between md:px-6">
           <span>Ronin / Agentic solutions engineering</span>
-          <span>GitHub App + Hermes + controlled spend</span>
+          <span>GitHub App + Centaur agent</span>
         </footer>
       </div>
     </main>
@@ -210,7 +214,7 @@ const onboardingSteps = [
   {
     label: "01",
     title: "Create Ronin org",
-    body: "Org is the tenant boundary for users, repos, channels, budgets, runs, artifacts, and approvals.",
+    body: "Org is the tenant boundary for repos, channels, runs, artifacts, and audit logs.",
   },
   {
     label: "02",
@@ -220,12 +224,12 @@ const onboardingSteps = [
   {
     label: "03",
     title: "Map support channels",
-    body: "Slack teams, Discord guilds, and Telegram chats/topics resolve to org, repo scope, and capabilities.",
+    body: "Slack teams and Telegram chats/topics resolve to org, repo scope, and capabilities.",
   },
   {
     label: "04",
     title: "Gate risky actions",
-    body: "Docs answers can be automatic; PRs, comments, deploys, and Stripe provisioning require policy checks.",
+    body: "Docs answers can be automatic; PRs, comments, deploys, and other risky actions require policy checks.",
   },
 ];
 
@@ -251,9 +255,14 @@ function RepoCard({
   repo,
 }: {
   repo: {
+    id: string;
     capabilities: string[];
     fullName: string;
     latestKnownSha: string | null;
+    harnessType: string;
+    model: string | null;
+    provider: string | null;
+    reasoning: string | null;
   };
 }) {
   return (
@@ -268,6 +277,7 @@ function RepoCard({
         <StatusPill status="done" />
       </div>
       <div className="mt-3 flex flex-wrap gap-2 font-mono text-xs text-ronin-muted">
+        <span className="border border-ronin-border bg-ronin-panel-muted px-2 py-1">{repo.harnessType}</span>
         {repo.capabilities.slice(0, 4).map((capability) => (
           <span className="border border-ronin-border bg-ronin-panel-muted px-2 py-1" key={capability}>
             {capability}
@@ -275,6 +285,7 @@ function RepoCard({
         ))}
         {repo.latestKnownSha ? <span className="border border-ronin-border bg-ronin-panel-muted px-2 py-1">{repo.latestKnownSha.slice(0, 7)}</span> : null}
       </div>
+      <RepoAgentSettings repo={repo} />
     </div>
   );
 }
@@ -308,12 +319,10 @@ function activityLabel(action: string) {
   if (action === "github.push") return "Webhook received";
   if (action === "github.pull_request") return "Pull request event";
   if (action === "run.queued") return "Run queued";
-  if (action === "run.completed") return "Hermes artifacts stored";
+  if (action === "run.completed") return "Agent artifacts stored";
   if (action === "run.blocked") return "Run blocked";
   if (action === "github.pull_request_opened") return "PR opened";
   if (action === "github.pull_request_failed") return "PR failed";
-  if (action === "provisioning.plan_created") return "Spend plan created";
-  if (action === "provisioning.approved") return "Budget approved";
   return action;
 }
 

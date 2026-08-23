@@ -1,8 +1,11 @@
+import { authorizeMutation } from "@/lib/auth";
 import { syncGitHubInstallation } from "@/lib/github-app";
 import { processQueuedGithubRun } from "@/lib/github-run-processor";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
+  const unauthorized = await authorizeMutation(request);
+  if (unauthorized) return unauthorized;
   const body = (await request.json().catch(() => ({}))) as { installationId?: string };
   const shouldProcessInline = body && "process" in body ? Boolean((body as { process?: boolean }).process) : false;
   const installationId = body.installationId ?? process.env.GITHUB_INSTALLATION_ID;

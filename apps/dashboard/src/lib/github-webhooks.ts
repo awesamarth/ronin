@@ -303,7 +303,7 @@ function webhookRunSummary(input: {
   }
 
   if (input.eventName === "issue_comment" || input.eventName === "pull_request_review_comment") {
-    return `Comment received on ${repo}. Ronin should map it to repo context and decide whether Hermes needs to answer or act.`;
+    return `Comment received on ${repo}. Ronin should map it to repo context and decide whether the agent needs to answer or act.`;
   }
 
   return `${input.eventName} received for ${repo}.`;

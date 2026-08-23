@@ -1,7 +1,10 @@
+import { authorizeMutation } from "@/lib/auth";
 import { processLatestQueuedGithubRun, processQueuedGithubRun } from "@/lib/github-run-processor";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
+  const unauthorized = await authorizeMutation(request);
+  if (unauthorized) return unauthorized;
   try {
     const body = (await request.json().catch(() => ({}))) as { runId?: string };
     const run = body.runId ? await processQueuedGithubRun(body.runId) : await processLatestQueuedGithubRun();

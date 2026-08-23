@@ -1,10 +1,10 @@
 import "dotenv/config";
 
-import { processQueuedGithubRun } from "../lib/github-run-processor";
+import { processLatestQueuedGithubRun } from "../lib/github-run-processor";
 import { prisma } from "../lib/prisma";
 
 const pollMs = Number(process.env.RONIN_GITHUB_WORKER_POLL_MS ?? 5000);
-const staleRunningMs = Number(process.env.RONIN_GITHUB_WORKER_STALE_RUNNING_MS ?? 120000);
+const staleRunningMs = Number(process.env.RONIN_GITHUB_WORKER_STALE_RUNNING_MS ?? 900_000);
 let isShuttingDown = false;
 
 async function main() {
@@ -17,21 +17,18 @@ async function main() {
   );
 
   while (!isShuttingDown) {
-    const run = await nextRunnableGithubRun();
-    if (!run) {
-      await sleep(pollMs);
-      continue;
-    }
-
-    console.log(JSON.stringify({ event: "github.worker_processing", runId: run.id, status: run.status }));
     try {
-      const processed = await processQueuedGithubRun(run.id);
+      const processed = await processLatestQueuedGithubRun();
+      if (!processed) {
+        await sleep(pollMs);
+        continue;
+      }
       console.log(
         JSON.stringify({
           event: "github.worker_completed",
-          repo: processed?.repo?.fullName,
-          runId: run.id,
-          status: processed?.status,
+          repo: processed.repo?.fullName,
+          runId: processed.id,
+          status: processed.status,
         }),
       );
     } catch (error) {
@@ -39,35 +36,10 @@ async function main() {
         JSON.stringify({
           error: error instanceof Error ? error.message : "GitHub worker processing failed.",
           event: "github.worker_failed",
-          runId: run.id,
         }),
       );
     }
   }
-}
-
-async function nextRunnableGithubRun() {
-  const staleBefore = new Date(Date.now() - staleRunningMs);
-  return prisma.run.findFirst({
-    orderBy: {
-      createdAt: "asc",
-    },
-    where: {
-      kind: {
-        startsWith: "github.",
-      },
-      OR: [
-        { status: "queued" },
-        {
-          status: "running",
-          completedAt: null,
-          createdAt: {
-            lt: staleBefore,
-          },
-        },
-      ],
-    },
-  });
 }
 
 function sleep(ms: number) {

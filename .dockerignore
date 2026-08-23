@@ -1,0 +1,10 @@
+.git
+**/.env
+**/.env.*
+!**/.env.example
+**/.next
+**/node_modules
+context.md
+key.pem
+*.log
+coverage

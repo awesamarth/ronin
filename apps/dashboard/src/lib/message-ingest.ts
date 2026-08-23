@@ -1,5 +1,5 @@
 import { prisma } from "./prisma";
-import { runHermesTask } from "./hermes-runner";
+import { runCentaurTask, buildThreadKey } from "./centaur-client";
 import { openPullRequestForGithubRun } from "./github-pr";
 import { runGithubWorkspaceMaintenance } from "./github-workspace-runner";
 
@@ -42,7 +42,7 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
 
   const run = await prisma.run.create({
     data: {
-      id: `message-${Date.now()}`,
+      id: `message-${crypto.randomUUID()}`,
       orgId: channel.orgId,
       repoId: repo.id,
       kind: "message.support_answer",
@@ -65,7 +65,12 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
       const workspaceResult = await runGithubWorkspaceMaintenance({
         baseBranch: repo.defaultBranch || "main",
         eventName: "message_workspace_request",
-        installationId: channel.org.githubInstallationId ?? process.env.GITHUB_INSTALLATION_ID ?? "",
+        executionConfig: {
+          harness: repo.harnessType,
+          model: repo.model,
+          provider: repo.provider,
+          reasoning: repo.reasoning,
+        },
         prompt: buildWorkspaceRequestPrompt({
           actionRequest: options.actionRequest,
           channelName: channel.displayName ?? channel.platformChannelId,
@@ -173,6 +178,7 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
               content: message,
             },
           });
+          throw new Error(`Ronin pushed the branch but could not open its PR: ${message}`);
         }
       }
 
@@ -199,7 +205,7 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
 
     const directActionRequest = detectWorkspaceActionRequest(input.text);
     if (directActionRequest) {
-      return processWorkspaceRequest({
+      return await processWorkspaceRequest({
         actionRequest: directActionRequest,
         needsDocsUpdate: true,
         reply: "I’ll make that change in the repository and open a PR.",
@@ -208,22 +214,33 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
       });
     }
 
-    const hermes = await runHermesTask({
-      cwd: process.cwd(),
-      skills: ["ronin"],
+    const agent = await runCentaurTask({
+      threadKey: buildThreadKey(["support", repo.fullName, run.id]),
       prompt: buildSupportPrompt({ artifacts: recentArtifacts, input, latestRun, repoName: repo.fullName, repoUrl }),
+      idempotencyKey: `${run.id}:support`,
+      config: {
+        harness: repo.harnessType,
+        model: repo.model,
+        provider: repo.provider,
+        reasoning: repo.reasoning,
+      },
+      onExecutionStarted: ({ executionId, threadKey }) =>
+        prisma.run.update({
+          where: { id: run.id },
+          data: { centaurExecutionId: executionId, centaurThreadKey: threadKey },
+        }),
     });
-    const parsed = parseHermesJson(hermes.rawOutput);
-    const reply = stringOrFallback(parsed.reply, hermes.rawOutput);
+    const parsed = parseAgentJson(agent.rawOutput);
+    const reply = stringOrFallback(parsed.reply, agent.rawOutput);
     const needsDocsUpdate = Boolean(parsed.needsDocsUpdate);
     const intent = parsed.intent === "workspace_change" ? "workspace_change" : "answer";
 
     if (intent === "workspace_change") {
-      return processWorkspaceRequest({
+      return await processWorkspaceRequest({
         actionRequest: stringOrFallback(parsed.actionRequest, input.text),
         needsDocsUpdate,
         reply,
-        runnerBackend: hermes.backend,
+        runnerBackend: agent.backend,
         summary: stringOrFallback(parsed.summary, "Ronin inspected the repo from a support request."),
       });
     }
@@ -254,7 +271,7 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
             needsDocsUpdate,
             intent,
             reply,
-            runnerBackend: hermes.backend,
+            runnerBackend: agent.backend,
           }),
           completedAt: new Date(),
         },
@@ -272,7 +289,7 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
             channelName: input.channelName,
             needsDocsUpdate,
             repo: repo.fullName,
-            runnerBackend: hermes.backend,
+            runnerBackend: agent.backend,
           }),
         },
       }),
@@ -290,7 +307,7 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
       needsDocsUpdate,
       intent,
       runId: run.id,
-      runnerBackend: hermes.backend,
+      runnerBackend: agent.backend,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Support message processing failed.";
@@ -308,6 +325,8 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
 
 async function resolveChannelContext(input: MessageIngestInput) {
   const platformTeamId = input.platformTeamId ?? "";
+  // Never auto-create a mapping: routing must come from an explicit operator
+  // configured Slack/Telegram channel mapping.
   const existing = await prisma.channel.findUnique({
     include: {
       defaultRepo: true,
@@ -322,46 +341,21 @@ async function resolveChannelContext(input: MessageIngestInput) {
     },
   });
 
-  if (existing) {
-    return prisma.channel.update({
-      data: {
-        displayName: input.channelName ?? existing.displayName,
-      },
-      include: {
-        defaultRepo: true,
-        org: true,
-      },
-      where: { id: existing.id },
-    });
+  if (!existing) {
+    throw new Error(
+      `No Ronin channel mapping exists for ${input.platform}:${platformTeamId || "-"}:${input.channelId}. Configure the channel mapping before sending messages.`,
+    );
   }
 
-  const org = await prisma.org.findFirst({
-    include: {
-      repos: {
-        orderBy: { createdAt: "asc" },
-        where: { watchedEnabled: true },
-      },
-    },
-    orderBy: { createdAt: "asc" },
-  });
-
-  if (!org) throw new Error("No Ronin org is configured.");
-  if (!org.repos[0]) throw new Error(`Org ${org.slug} has no watched repositories configured.`);
-
-  return prisma.channel.create({
+  return prisma.channel.update({
     data: {
-      orgId: org.id,
-      defaultRepoId: org.repos[0].id,
-      platform: input.platform,
-      platformTeamId,
-      platformChannelId: input.channelId,
-      displayName: input.channelName,
-      allowedRepoIds: org.repos[0].id,
+      displayName: input.channelName ?? existing.displayName,
     },
     include: {
       defaultRepo: true,
       org: true,
     },
+    where: { id: existing.id },
   });
 }
 
@@ -388,14 +382,11 @@ function buildSupportPrompt(input: {
   const latestKnownIssues = input.latestRun?.artifacts.find((artifact) => artifact.kind === "known_issues_update")?.content;
   const latestSupportSeed = input.latestRun?.artifacts.find((artifact) => artifact.kind === "support_answer")?.content;
 
-  return `Use the Ronin skill.
-
-You are Hermes acting as Ronin, an agentic solutions engineer for a protocol/SDK team.
+  return `You are Ronin, an agentic solutions engineer for a protocol/SDK team.
 You are handling an external builder message in a support channel.
 Ronin has already resolved the tenant/channel/repo context. Do not ask the user which repo this is about.
 If the user is asking a question, give a direct, useful answer grounded in the configured repo and Ronin artifacts.
 If the user is asking Ronin to change code/docs/tests/config/examples and open a PR, set intent to "workspace_change" and summarize the requested change in actionRequest.
-Do not clone or fetch private repositories in this classification step. Use only the Ronin-provided context below.
 If the user asks for code/docs/tests/config/examples changes, return intent "workspace_change"; Ronin will run a token-backed workspace checkout separately.
 If the question reveals missing docs or recurring confusion, set needsDocsUpdate to true.
 Do not claim a PR was opened; Ronin will open it after your intent decision if policy allows.
@@ -433,14 +424,11 @@ Return JSON:
 }
 
 function detectWorkspaceActionRequest(text: string) {
+  // Only an explicit PR request bypasses agent classification. Generic
+  // fix/change wording must go through classification so writes stay gated.
   const normalized = text.toLowerCase();
-  const asksForPr = /\b(open|create|raise|make)\s+(a\s+)?pr\b|\bpull request\b/.test(normalized);
-  const asksForRepoEdit =
-    /\b(add|update|edit|change|fix|write|create|document|improve)\b/.test(normalized) &&
-    /\b(readme|docs?|documentation|changelog|example|test|code|section|file|api|method|sdk|config)\b/.test(normalized);
-
-  if (!asksForPr && !asksForRepoEdit) return null;
-  return text.trim();
+  const asksForPr = /\b(open|create|raise|file|submit)\s+(a\s+)?(pr|pull request)\b/.test(normalized);
+  return asksForPr ? text.trim() : null;
 }
 
 function buildWorkspaceRequestPrompt(input: {
@@ -465,7 +453,7 @@ ${input.actionRequest}
 Make the smallest useful repo change that satisfies this request. Prefer docs/examples/tests/code edits over generated reports. Do not merge, deploy, rotate secrets, or spend money. Return a PR-ready JSON report.`;
 }
 
-function parseHermesJson(rawOutput: string): Record<string, unknown> {
+function parseAgentJson(rawOutput: string): Record<string, unknown> {
   try {
     return JSON.parse(rawOutput) as Record<string, unknown>;
   } catch {

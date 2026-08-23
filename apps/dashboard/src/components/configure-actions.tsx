@@ -1,22 +1,19 @@
 "use client";
 
-import type { ProvisioningStatus, SlackConnection, TelegramConnection } from "@/lib/dashboard-data";
+import type { SlackConnection, TelegramConnection } from "@/lib/dashboard-data";
 import { useEffect, useState } from "react";
-import { ProvisioningPanel } from "./provisioning-panel";
 import { SlackChannelMappingForm } from "./slack-channel-mapping-form";
 import { TelegramChatMappingForm } from "./telegram-chat-mapping-form";
 
 export function ConfigureActions({
-  provisioning,
   slack,
   telegram,
 }: {
-  provisioning: ProvisioningStatus | null;
   slack: SlackConnection;
   telegram: TelegramConnection;
 }) {
-  const [activePanel, setActivePanel] = useState<"slack" | "telegram" | "spend" | null>(null);
-  const panelTitle = activePanel === "slack" ? "Slack" : activePanel === "telegram" ? "Telegram" : "Spend";
+  const [activePanel, setActivePanel] = useState<"slack" | "telegram" | null>(null);
+  const panelTitle = activePanel === "slack" ? "Slack" : "Telegram";
 
   useEffect(() => {
     if (!activePanel) return;
@@ -40,9 +37,6 @@ export function ConfigureActions({
         <button className="ronin-button" onClick={() => setActivePanel("telegram")} type="button">
           Telegram
         </button>
-        <button className="ronin-button" onClick={() => setActivePanel("spend")} type="button">
-          Spend
-        </button>
       </div>
 
       {activePanel ? (
@@ -57,7 +51,6 @@ export function ConfigureActions({
             <div className="p-4 md:p-5">
               {activePanel === "slack" ? <SlackChannelMappingForm slack={slack} /> : null}
               {activePanel === "telegram" ? <TelegramChatMappingForm telegram={telegram} /> : null}
-              {activePanel === "spend" ? <ProvisioningPanel provisioning={provisioning} /> : null}
             </div>
           </div>
         </div>

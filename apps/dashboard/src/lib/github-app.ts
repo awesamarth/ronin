@@ -1,4 +1,5 @@
 import { createSign } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { prisma } from "./prisma";
 
 export function createGitHubAppJwt() {
@@ -168,8 +169,9 @@ export async function syncGitHubInstallation(installationId: string) {
 }
 
 function readGitHubPrivateKey() {
-  const privateKey = process.env.GITHUB_APP_PRIVATE_KEY;
-  if (!privateKey) throw new Error("GITHUB_APP_PRIVATE_KEY is required.");
+  const privateKey = process.env.GITHUB_APP_PRIVATE_KEY
+    || (process.env.GITHUB_APP_PRIVATE_KEY_PATH ? readFileSync(process.env.GITHUB_APP_PRIVATE_KEY_PATH, "utf8") : "");
+  if (!privateKey) throw new Error("GITHUB_APP_PRIVATE_KEY or GITHUB_APP_PRIVATE_KEY_PATH is required.");
   return privateKey.replace(/\\n/g, "\n");
 }
 

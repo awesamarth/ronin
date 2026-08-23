@@ -1,6 +1,6 @@
 import { prisma } from "./prisma";
 import { createInstallationToken } from "./github-app";
-import { runHermesTask } from "./hermes-runner";
+import { runCentaurTask, buildThreadKey } from "./centaur-client";
 import { openPullRequestForGithubRun } from "./github-pr";
 import { runGithubWorkspaceMaintenance } from "./github-workspace-runner";
 
@@ -59,46 +59,51 @@ type CompareResponse = {
   }>;
 };
 
+const staleRunningMs = () => Number(process.env.RONIN_GITHUB_WORKER_STALE_RUNNING_MS ?? 900_000);
+
 export async function processLatestQueuedGithubRun() {
-  const run = await prisma.run.findFirst({
-    include: {
-      org: true,
-      repo: true,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-    where: {
-      status: "queued",
-      kind: {
-        startsWith: "github.",
-      },
-    },
-  });
-
-  if (!run) return null;
-
-  return processQueuedGithubRun(run.id);
+  const [claimed] = await prisma.$queryRaw<Array<{ id: string }>>`
+    WITH candidate AS (
+      SELECT id FROM "Run"
+      WHERE kind LIKE 'github.%'
+        AND (
+          status = 'queued'
+          OR (status = 'running' AND "startedAt" < NOW() - (${staleRunningMs()} * INTERVAL '1 millisecond'))
+        )
+      ORDER BY "createdAt" ASC
+      FOR UPDATE SKIP LOCKED
+      LIMIT 1
+    )
+    UPDATE "Run" AS run
+    SET status = 'running', "startedAt" = NOW(), "completedAt" = NULL, attempt = attempt + 1
+    FROM candidate
+    WHERE run.id = candidate.id
+    RETURNING run.id
+  `;
+  return claimed ? processClaimedGithubRun(claimed.id) : null;
 }
 
 export async function processQueuedGithubRun(runId: string) {
-  const run = await prisma.run.findUnique({
-    include: {
-      org: true,
-      repo: true,
-    },
+  const staleBefore = new Date(Date.now() - staleRunningMs());
+  const claimed = await prisma.run.updateMany({
     where: {
       id: runId,
+      kind: { startsWith: "github." },
+      OR: [{ status: "queued" }, { status: "running", startedAt: { lt: staleBefore } }],
     },
+    data: { status: "running", startedAt: new Date(), completedAt: null, attempt: { increment: 1 } },
   });
+  if (claimed.count !== 1) throw new Error(`Run ${runId} is not queued or stale.`);
+  return processClaimedGithubRun(runId);
+}
 
+async function processClaimedGithubRun(runId: string) {
+  const run = await prisma.run.findUnique({
+    include: { org: true, repo: true },
+    where: { id: runId },
+  });
   if (!run) throw new Error(`Run ${runId} was not found.`);
   if (!run.repo) throw new Error(`Run ${runId} is not linked to a repository.`);
-
-  await prisma.run.update({
-    where: { id: run.id },
-    data: { status: "running" },
-  });
 
   try {
     const input = parseRunInput(run.input);
@@ -114,18 +119,30 @@ export async function processQueuedGithubRun(runId: string) {
       repo: run.repo.fullName,
       summary: run.summary,
     });
-    const hermes = await runHermesTask({
-      cwd: process.cwd(),
+    const agent = await runCentaurTask({
+      threadKey: buildThreadKey(["run", run.repo.fullName, run.id]),
       prompt,
+      idempotencyKey: `${run.id}:analyze`,
+      config: {
+        harness: run.repo.harnessType,
+        model: run.repo.model,
+        provider: run.repo.provider,
+        reasoning: run.repo.reasoning,
+      },
+      onExecutionStarted: ({ executionId, threadKey }) =>
+        prisma.run.update({
+          where: { id: run.id },
+          data: { centaurExecutionId: executionId, centaurThreadKey: threadKey },
+        }),
     });
-    const parsed = parseHermesJson(hermes.rawOutput);
+    const parsed = parseAgentJson(agent.rawOutput);
     const artifacts = {
-      docsUpdatePlan: stringOrFallback(parsed.docsUpdatePlan, "Hermes did not return a docs update plan."),
-      changelogDraft: stringOrFallback(parsed.changelogDraft, "Hermes did not return a changelog draft."),
-      knownIssuesUpdate: stringOrFallback(parsed.knownIssuesUpdate, "Hermes did not return known-issues updates."),
-      supportAnswerDelta: stringOrFallback(parsed.supportAnswerDelta, "Hermes did not return a support-answer delta."),
-      suggestedPrBody: stringOrFallback(parsed.suggestedPrBody, "Hermes did not return a PR body."),
-      runnerBackend: hermes.backend,
+      docsUpdatePlan: stringOrFallback(parsed.docsUpdatePlan, "Agent did not return a docs update plan."),
+      changelogDraft: stringOrFallback(parsed.changelogDraft, "Agent did not return a changelog draft."),
+      knownIssuesUpdate: stringOrFallback(parsed.knownIssuesUpdate, "Agent did not return known-issues updates."),
+      supportAnswerDelta: stringOrFallback(parsed.supportAnswerDelta, "Agent did not return a support-answer delta."),
+      suggestedPrBody: stringOrFallback(parsed.suggestedPrBody, "Agent did not return a PR body."),
+      runnerBackend: agent.backend,
     };
     const workspaceResult = shouldRunWorkspaceMaintenance(run.kind, run.repo.capabilities, parsed.suggestedPrBody, artifacts.changelogDraft)
       ? await runGithubWorkspaceMaintenance({
@@ -134,7 +151,12 @@ export async function processQueuedGithubRun(runId: string) {
           beforeSha: input.push?.before ?? input.pullRequest?.base?.sha,
           changelogDraft: artifacts.changelogDraft,
           eventName: input.eventName,
-          installationId: input.installationId ?? run.org.githubInstallationId ?? "",
+          executionConfig: {
+            harness: run.repo.harnessType,
+            model: run.repo.model,
+            provider: run.repo.provider,
+            reasoning: run.repo.reasoning,
+          },
           prompt,
           repo: run.repo.fullName,
           runId: run.id,
@@ -236,7 +258,7 @@ export async function processQueuedGithubRun(runId: string) {
           actorType: "ronin",
           action: "run.completed",
           target: run.repo.fullName,
-          metadata: JSON.stringify({ runnerBackend: hermes.backend }),
+          metadata: JSON.stringify({ runnerBackend: agent.backend }),
         },
       }),
     ]);
@@ -317,6 +339,10 @@ async function processRepositoryOnboardingRun(input: {
       capabilities: string;
       defaultBranch: string;
       fullName: string;
+      harnessType: string;
+      model: string | null;
+      provider: string | null;
+      reasoning: string | null;
     } | null;
   };
 }) {
@@ -332,7 +358,12 @@ async function processRepositoryOnboardingRun(input: {
   const workspaceResult = await runGithubWorkspaceMaintenance({
     baseBranch: run.repo.defaultBranch || "main",
     eventName: "repository_onboarded",
-    installationId,
+    executionConfig: {
+      harness: run.repo.harnessType,
+      model: run.repo.model,
+      provider: run.repo.provider,
+      reasoning: run.repo.reasoning,
+    },
     prompt,
     repo: run.repo.fullName,
     runId: run.id,
@@ -451,9 +482,11 @@ function shouldRunWorkspaceMaintenance(kind: string, capabilities: string, sugge
   if (kind !== "github.push") return false;
   const capabilitySet = capabilities.split(",").map((capability) => capability.trim());
   if (!capabilitySet.includes("auto_report_pr")) return false;
+  // Conservative AND: a declared no-PR OR no-changelog result must not trigger
+  // workspace mutation.
   const body = typeof suggestedPrBody === "string" ? suggestedPrBody.toLowerCase() : "";
-  const changelog = changelogDraft.toLowerCase();
-  return !body.includes("no pr needed") || !changelog.includes("no changelog");
+  if (body.includes("no pr needed")) return false;
+  return !changelogDraft.toLowerCase().includes("no changelog");
 }
 
 async function fetchCompareForRun(input: QueuedRunInput, repo: string) {
@@ -504,7 +537,7 @@ function buildProcessingPrompt(input: {
   const files = input.compare.files ?? [];
   const commits = input.compare.commits ?? [];
 
-  return `You are Hermes working for Ronin, an agentic solutions engineering system for protocol teams.
+  return `You are Ronin, an agentic solutions engineering system for protocol teams.
 
 Process this GitHub event and produce concrete maintenance artifacts.
 
@@ -545,7 +578,7 @@ Return JSON with this exact shape:
   "docsUpdatePlan": "Markdown list of docs that should be updated and why",
   "changelogDraft": "Markdown changelog entry for this change",
   "knownIssuesUpdate": "Markdown known-issues/FAQ update, or say no update needed",
-  "supportAnswerDelta": "Short support answer delta Discord/Telegram/Slack bots should learn",
+  "supportAnswerDelta": "Short support answer delta Telegram/Slack bots should learn",
   "suggestedPrBody": "Markdown body for a follow-up docs/integration PR, or say no PR needed"
 }`;
 }
@@ -587,12 +620,12 @@ function parseRunInput(input: string): QueuedRunInput {
   }
 }
 
-function parseHermesJson(rawOutput: string): Record<string, unknown> {
+function parseAgentJson(rawOutput: string): Record<string, unknown> {
   try {
     return JSON.parse(rawOutput) as Record<string, unknown>;
   } catch {
     const match = rawOutput.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error("Hermes did not return JSON.");
+    if (!match) throw new Error("Agent did not return JSON.");
     return JSON.parse(match[0]) as Record<string, unknown>;
   }
 }
