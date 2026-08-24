@@ -65,7 +65,6 @@ async function handleSlackMessage(input: {
       if (installation.orgId) {
         const userName = await getUserName(client, event.user);
         const result = await ingestOrgRoninMessage({
-          installationId: installation.id,
           orgId: installation.orgId,
           teamId,
           channelId: event.channel,

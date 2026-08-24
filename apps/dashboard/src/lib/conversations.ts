@@ -18,13 +18,6 @@ type ConversationMessageInput = {
     kind: string;
     input: string;
     summary?: string;
-    execution?: {
-      id: string;
-      orgId: string;
-      purpose: string;
-      idempotencyKey: string;
-      backend: string;
-    };
   };
 };
 
@@ -98,15 +91,6 @@ export async function recordInboundMessage(input: ConversationMessageInput) {
             sourceMessageId: message.id,
             status: "running",
             startedAt: new Date(),
-            executions: runData.execution
-              ? {
-                  create: {
-                    ...runData.execution,
-                    status: "running",
-                    startedAt: new Date(),
-                  },
-                }
-              : undefined,
           },
         })
       : null;

@@ -3,7 +3,7 @@ import { prisma } from "./prisma";
 
 export async function runTrackedCentaurTask(input: {
   runId: string;
-  purpose: "support" | "analyze" | "workspace";
+  purpose: "support" | "org_dm" | "analyze" | "workspace";
   threadKey: string;
   prompt: string;
   idempotencyKey: string;

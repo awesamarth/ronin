@@ -61,7 +61,7 @@ bun run --cwd apps/dashboard telegram:connector
 - Installing the GitHub App should be enough to start watching accessible repos.
 - Repository onboarding should create a run and, when useful, open a PR with real file changes.
 - Push webhooks should compare diffs and update docs/changelogs/support artifacts when needed.
-- Slack channel mentions and Telegram messages must resolve channel/chat mappings before invoking Centaur. Slack DMs resolve the workspace installation: connected installations use org-scoped hosted inference context; unconnected installations use the inference-only public profile.
+- Slack channel mentions and Telegram messages must resolve channel/chat mappings before invoking Centaur. Slack DMs resolve the workspace installation: connected installations use Centaur with org context; unconnected installations use the direct inference-only public profile.
 - Action requests from mapped support channels should open PRs rather than editing main directly.
 - Ronin should store artifacts and context in its own database; do not rely only on agent session memory.
 

@@ -112,7 +112,7 @@ Important values:
 - `GITHUB_APP_PRIVATE_KEY` or `GITHUB_APP_PRIVATE_KEY_PATH`: private key used only on the backend.
 - `RONIN_SESSION_SECRET`, `RONIN_ALLOWED_GITHUB_USERS`: signed operator sessions and the GitHub-login allowlist.
 - `SLACK_APP_TOKEN`, `SLACK_BOT_TOKEN`: Slack Socket Mode connector.
-- `RONIN_HOSTED_LLM_API_KEY`: hosted Slack DM inference credential. DMs use this direct model-only path, never a Centaur tool sandbox. Configure model, endpoint, request quotas, prompt/output limits, concurrency, and timeout with the `RONIN_HOSTED_*` variables in `.env.example`.
+- `RONIN_HOSTED_LLM_API_KEY`: hosted inference credential for unconnected Slack workspaces. This public path is model-only and never enters a Centaur tool sandbox. Connected-org DMs use Centaur with organization context. Configure public model, endpoint, quotas, prompt/output limits, concurrency, and timeout with the `RONIN_HOSTED_*` variables in `.env.example`.
 - Telegram token variables if running the Telegram connector.
 - `CENTAUR_API_URL`, `CENTAUR_API_KEY`: Centaur execution backend configuration. `ronin:*` sessions currently require an admin- or Console-capable credential; a Slack ingress key is prefix-restricted and will not work.
 - `RONIN_HARNESS`: fallback harness (defaults to `pi`); repositories may override harness/model/provider/reasoning.
