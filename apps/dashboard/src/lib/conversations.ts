@@ -11,6 +11,21 @@ type ConversationMessageInput = {
   actorName?: string;
   orgId?: string;
   channelId?: string;
+  run?: {
+    id: string;
+    orgId: string;
+    repoId?: string;
+    kind: string;
+    input: string;
+    summary?: string;
+    execution?: {
+      id: string;
+      orgId: string;
+      purpose: string;
+      idempotencyKey: string;
+      backend: string;
+    };
+  };
 };
 
 export async function recordInboundMessage(input: ConversationMessageInput) {
@@ -46,37 +61,57 @@ export async function recordInboundMessage(input: ConversationMessageInput) {
       });
     }
 
-    const existingMessage = await tx.conversationMessage.findUnique({
+    const [inserted] = await tx.$queryRaw<Array<{ id: string }>>`
+      INSERT INTO "ConversationMessage" (
+        "id", "conversationId", "externalMessageId", "role", "actorId", "actorName", "content", "createdAt"
+      ) VALUES (
+        ${crypto.randomUUID()}, ${conversation.id}, ${input.externalMessageId}, 'user',
+        ${input.actorId ?? null}, ${input.actorName ?? null}, ${input.content}, NOW()
+      )
+      ON CONFLICT ("conversationId", "externalMessageId") DO NOTHING
+      RETURNING "id"
+    `;
+    const message = await tx.conversationMessage.findUniqueOrThrow({
       where: {
         conversationId_externalMessageId: {
           conversationId: conversation.id,
           externalMessageId: input.externalMessageId,
         },
       },
-    });
-    const message = await tx.conversationMessage.upsert({
-      where: {
-        conversationId_externalMessageId: {
-          conversationId: conversation.id,
-          externalMessageId: input.externalMessageId,
-        },
-      },
-      create: {
-        conversationId: conversation.id,
-        externalMessageId: input.externalMessageId,
-        role: "user",
-        actorId: input.actorId,
-        actorName: input.actorName,
-        content: input.content,
-      },
-      update: {},
     });
 
     if (message.content !== input.content || message.actorId !== (input.actorId ?? null)) {
       throw new Error("Duplicate platform message identity has conflicting content or actor.");
     }
 
-    return { conversation, message, isNew: !existingMessage };
+    const runData = input.run;
+    const run = inserted && runData
+      ? await tx.run.create({
+          data: {
+            id: runData.id,
+            orgId: runData.orgId,
+            repoId: runData.repoId,
+            kind: runData.kind,
+            input: runData.input,
+            summary: runData.summary,
+            conversationId: conversation.id,
+            sourceMessageId: message.id,
+            status: "running",
+            startedAt: new Date(),
+            executions: runData.execution
+              ? {
+                  create: {
+                    ...runData.execution,
+                    status: "running",
+                    startedAt: new Date(),
+                  },
+                }
+              : undefined,
+          },
+        })
+      : null;
+
+    return { conversation, message, run, isNew: Boolean(inserted) };
   });
 }
 

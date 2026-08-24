@@ -2,6 +2,7 @@ import { ConfigureActions } from "@/components/configure-actions";
 import { getOperatorSession } from "@/lib/auth";
 import { GitHubInstallSync } from "@/components/github-install-sync";
 import { GitHubRepoActions } from "@/components/github-repo-actions";
+import { OrgProfileForm } from "@/components/org-profile-form";
 import { RepoAgentSettings } from "@/components/repo-agent-settings";
 import { StatusPill } from "@/components/status-pill";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -104,6 +105,7 @@ export default async function Home({
               <FactRow label="Repos" value={workspace ? String(workspace.repos.length) : "0"} />
             </div>
             <GitHubRepoActions connected={Boolean(workspace?.githubConnected)} installUrl={githubInstallUrl} />
+            {workspace ? <OrgProfileForm orgId={workspace.orgId} profile={workspace.profile} /> : null}
 
             <div className="mt-5 grid gap-3">
               {workspace?.repos.length ? (

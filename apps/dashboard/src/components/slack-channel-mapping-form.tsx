@@ -74,7 +74,7 @@ export function SlackChannelMappingForm({ slack }: { slack: SlackConnection }) {
             <p className="font-mono text-xs uppercase tracking-[0.22em] text-ronin-muted">Support routing</p>
             <h3 className="mt-2 text-lg font-semibold">Slack channels</h3>
             <p className="mt-2 text-sm leading-6 text-ronin-muted">
-              Route a Slack channel or DM to a watched repo so Ronin can answer with the right org and codebase context.
+              Connecting a channel also connects this Slack workspace to the Ronin org. DMs use org-wide context; channel mentions use the mapped repo.
             </p>
           </div>
           <StatusBadge label={slack.configured ? "Connected" : "Needs env"} tone={slack.configured ? "success" : "warning"} />
@@ -102,7 +102,7 @@ export function SlackChannelMappingForm({ slack }: { slack: SlackConnection }) {
               className="mt-2 w-full border border-ronin-border bg-ronin-background px-3 py-2.5 font-mono text-sm text-ronin-foreground outline-none transition placeholder:text-ronin-muted focus:border-ronin-strong-border"
               id="slack-channel-id"
               name="channelId"
-              placeholder="C123..., D123..."
+              placeholder="C123..."
               required
             />
           </div>
@@ -114,7 +114,7 @@ export function SlackChannelMappingForm({ slack }: { slack: SlackConnection }) {
               className="mt-2 w-full border border-ronin-border bg-ronin-background px-3 py-2.5 font-mono text-sm text-ronin-foreground outline-none transition placeholder:text-ronin-muted focus:border-ronin-strong-border"
               id="slack-display-name"
               name="displayName"
-              placeholder="#support or Ronin DM"
+              placeholder="#support"
             />
           </div>
         </div>

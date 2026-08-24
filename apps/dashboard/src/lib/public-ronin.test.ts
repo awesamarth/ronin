@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { buildPublicRoninPrompt } from "./public-ronin";
+import { buildPublicRoninPrompt, buildPublicRoninSystemPrompt } from "./public-ronin";
 
 describe("public Ronin prompt", () => {
   test("is conversational without granting private access", () => {
-    const prompt = buildPublicRoninPrompt("What else can you do?");
+    const system = buildPublicRoninSystemPrompt();
+    const prompt = buildPublicRoninPrompt("What else can you do?", [{ role: "assistant", content: "Earlier answer" }]);
 
-    expect(prompt).toContain("Continue the conversation naturally");
-    expect(prompt).toContain("no company knowledge or repository access");
+    expect(system).toContain("Continue the conversation naturally");
+    expect(system).toContain("no company knowledge");
+    expect(system).toContain("no company knowledge, repository access, tools, shell, or private information");
+    expect(prompt).toContain("Earlier answer");
     expect(prompt).toContain("What else can you do?");
   });
 });

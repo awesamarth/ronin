@@ -25,7 +25,8 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
   if (!repo) throw new Error(`No watched repository is configured for ${input.platform}:${input.channelId}.`);
 
   const externalMessageId = input.messageId ?? crypto.randomUUID();
-  const { conversation, message } = await recordInboundMessage({
+  const runId = `message-${crypto.randomUUID()}`;
+  const { conversation, run, isNew } = await recordInboundMessage({
     platform: input.platform,
     platformTeamId: input.platformTeamId,
     platformChannelId: input.channelId,
@@ -36,54 +37,52 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
     actorName: input.userName,
     orgId: channel.orgId,
     channelId: channel.id,
-  });
-  if (await prisma.run.findUnique({ where: { sourceMessageId: message.id }, select: { id: true } })) {
-    throw new DuplicateMessageDelivery(`Message ${externalMessageId} was already processed.`);
-  }
-
-  const latestRun = await prisma.run.findFirst({
-    include: {
-      artifacts: {
-        orderBy: { createdAt: "desc" },
-        take: 3,
-      },
-    },
-    orderBy: { createdAt: "desc" },
-    where: {
-      conversationId: conversation.id,
+    run: {
+      id: runId,
       orgId: channel.orgId,
       repoId: repo.id,
+      kind: "message.support_answer",
+      input: JSON.stringify(input),
+      summary: `Support message from ${input.platform}:${input.channelId}`,
     },
   });
-  const [recentArtifacts, priorMessages] = await Promise.all([
-    prisma.artifact.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 8,
-      where: {
-        orgId: channel.orgId,
-        repoId: repo.id,
-        OR: [{ kind: { not: "support_answer" } }, { run: { conversationId: conversation.id } }],
-      },
-    }),
-    prisma.conversationMessage
-      .findMany({
-        orderBy: { createdAt: "desc" },
-        take: 12,
-        where: { conversationId: conversation.id, id: { not: message.id } },
-      })
-      .then((messages) => messages.reverse()),
-  ]);
-
-  const run = await createMessageRun({
-    channelId: input.channelId,
-    conversationId: conversation.id,
-    input,
-    orgId: channel.orgId,
-    repoId: repo.id,
-    sourceMessageId: message.id,
-  });
+  if (!isNew || !run) throw new DuplicateMessageDelivery(`Message ${externalMessageId} was already processed.`);
 
   try {
+    const latestRun = await prisma.run.findFirst({
+      include: {
+        artifacts: {
+          orderBy: { createdAt: "desc" },
+          take: 3,
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      where: {
+        id: { not: run.id },
+        conversationId: conversation.id,
+        orgId: channel.orgId,
+        repoId: repo.id,
+      },
+    });
+    const [recentArtifacts, priorMessages] = await Promise.all([
+      prisma.artifact.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 8,
+        where: {
+          orgId: channel.orgId,
+          repoId: repo.id,
+          OR: [{ kind: { not: "support_answer" } }, { run: { conversationId: conversation.id } }],
+        },
+      }),
+      prisma.conversationMessage
+        .findMany({
+          orderBy: { createdAt: "desc" },
+          take: 12,
+          where: { conversationId: conversation.id, externalMessageId: { not: externalMessageId } },
+        })
+        .then((messages) => messages.reverse()),
+    ]);
+
     const repoUrl = githubRepoUrl(repo.fullName);
 
     const processWorkspaceRequest = async (options: {
@@ -351,36 +350,6 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
         completedAt: new Date(),
       },
     });
-    throw error;
-  }
-}
-
-async function createMessageRun(input: {
-  channelId: string;
-  conversationId: string;
-  input: MessageIngestInput;
-  orgId: string;
-  repoId: string;
-  sourceMessageId: string;
-}) {
-  try {
-    return await prisma.run.create({
-      data: {
-        id: `message-${crypto.randomUUID()}`,
-        orgId: input.orgId,
-        repoId: input.repoId,
-        conversationId: input.conversationId,
-        sourceMessageId: input.sourceMessageId,
-        kind: "message.support_answer",
-        status: "running",
-        input: JSON.stringify(input.input),
-        summary: `Support message from ${input.input.platform}:${input.channelId}`,
-      },
-    });
-  } catch (error) {
-    if (typeof error === "object" && error && "code" in error && error.code === "P2002") {
-      throw new DuplicateMessageDelivery(`Message ${input.input.messageId ?? input.sourceMessageId} was already processed.`);
-    }
     throw error;
   }
 }

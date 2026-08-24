@@ -14,17 +14,19 @@ model Org {
   githubOrgId          String?
   githubOrgLogin       String?  @unique
   githubInstallationId String?  @unique
+  profile              String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
-  repos         Repository[]
-  channels      Channel[]
-  conversations Conversation[]
-  runs          Run[]
-  executions    AgentExecution[]
-  artifacts     Artifact[]
-  githubEvents  GitHubEvent[]
-  auditLogs     AuditLog[]
+  repos              Repository[]
+  channels           Channel[]
+  slackInstallations SlackInstallation[]
+  conversations      Conversation[]
+  runs               Run[]
+  executions         AgentExecution[]
+  artifacts          Artifact[]
+  githubEvents       GitHubEvent[]
+  auditLogs          AuditLog[]
 }
 
 model Repository {
@@ -52,6 +54,43 @@ model Repository {
 
   @@unique([orgId, fullName])
   @@index([orgId])
+}
+
+model SlackInstallation {
+  id          String   @id @default(cuid())
+  teamId      String   @unique
+  orgId       String?
+  teamName    String?
+  installedAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  org   Org?                   @relation(fields: [orgId], references: [id], onDelete: SetNull)
+  usage HostedInferenceUsage[]
+
+  @@index([orgId])
+}
+
+model HostedInferenceUsage {
+  id                  String    @id @default(cuid())
+  slackInstallationId String
+  actorId             String
+  requestId           String
+  model               String
+  status              String
+  inputTokens         Int?
+  outputTokens        Int?
+  error               String?
+  completedAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  slackInstallation SlackInstallation @relation(fields: [slackInstallationId], references: [id], onDelete: Cascade)
+
+  @@unique([slackInstallationId, requestId], map: "HostedInferenceUsage_installation_request_key")
+  @@index([slackInstallationId, actorId, createdAt], map: "HostedInferenceUsage_installation_actor_created_idx")
+  @@index([slackInstallationId, status, createdAt], map: "HostedInferenceUsage_installation_status_created_idx")
 }
 
 model Channel {

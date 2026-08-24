@@ -44,8 +44,10 @@ export type ActivityEvent = {
 };
 
 export type WorkspaceOverview = {
+  orgId: string;
   orgName: string;
   orgSlug: string;
+  profile: string | null;
   githubConnected: boolean;
   githubInstallationId: string | null;
   repos: Array<{
@@ -150,8 +152,10 @@ export async function getWorkspaceOverview(): Promise<WorkspaceOverview | null> 
   return {
     githubConnected: Boolean(org.githubInstallationId),
     githubInstallationId: org.githubInstallationId,
+    orgId: org.id,
     orgName: org.name,
     orgSlug: org.slug,
+    profile: org.profile,
     repos: org.repos.map((repo) => ({
       capabilities: repo.capabilities.split(",").map((capability) => capability.trim()).filter(Boolean),
       fullName: repo.fullName,
@@ -213,6 +217,7 @@ function parseMetadata(metadata: string | null): Record<string, unknown> {
 
 export async function getSlackConnection(): Promise<SlackConnection> {
   const teamId = process.env.SLACK_TEAM_ID ?? "";
+  const installation = teamId ? await prisma.slackInstallation.findUnique({ where: { teamId }, select: { orgId: true } }) : null;
   const org = await prisma.org.findFirst({
     include: {
       channels: {
@@ -236,6 +241,7 @@ export async function getSlackConnection(): Promise<SlackConnection> {
         },
       },
     },
+    where: installation?.orgId ? { id: installation.orgId } : undefined,
     orderBy: {
       createdAt: "asc",
     },

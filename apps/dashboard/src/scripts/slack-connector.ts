@@ -2,7 +2,9 @@ import "dotenv/config";
 
 import { App } from "@slack/bolt";
 import { recordInboundMessage, recordOutboundMessage } from "../lib/conversations";
+import { ensureSlackInstallation, HostedInferenceLimitError } from "../lib/hosted-inference";
 import { DuplicateMessageDelivery, ingestSupportMessage } from "../lib/message-ingest";
+import { ingestOrgRoninMessage } from "../lib/org-ronin";
 import { prisma } from "../lib/prisma";
 import { answerPublicRoninMessage } from "../lib/public-ronin";
 import { withSlackExecutionFooter } from "../lib/slack-execution-footer";
@@ -31,33 +33,65 @@ const app = new App({
   token: botToken,
 });
 
-app.event("app_mention", async ({ client, event }) => {
-  await handleSlackMessage({ client, event: event as SlackMessageEvent, mode: "mention" });
+app.event("app_mention", async ({ client, context, event }) => {
+  await handleSlackMessage({ client, event: event as SlackMessageEvent, mode: "mention", teamId: context.teamId });
 });
 
-app.event("message", async ({ client, event }) => {
+app.event("message", async ({ client, context, event }) => {
   const message = event as SlackMessageEvent;
   if (message.channel_type !== "im") return;
-  await handleSlackMessage({ client, event: message, mode: "dm" });
+  await handleSlackMessage({ client, event: message, mode: "dm", teamId: context.teamId });
 });
 
-async function handleSlackMessage(input: { client: App["client"]; event: SlackMessageEvent; mode: "dm" | "mention" }) {
+async function handleSlackMessage(input: {
+  client: App["client"];
+  event: SlackMessageEvent;
+  mode: "dm" | "mention";
+  teamId?: string;
+}) {
   const { client, event, mode } = input;
 
   if (!event.text?.trim()) return;
   if (!event.channel || !event.user) return;
   if (event.bot_id || event.subtype) return;
 
-  const teamId = event.team ?? process.env.SLACK_TEAM_ID ?? "unknown-team";
+  const teamId = input.teamId ?? event.team ?? process.env.SLACK_TEAM_ID ?? "unknown-team";
 
   try {
-    if (mode === "dm" && !(await isMappedChannel(teamId, event.channel))) {
+    const installation = await ensureSlackInstallation(teamId);
+    if (mode === "dm") {
       const externalMessageId = event.ts ?? crypto.randomUUID();
+      const threadId = event.thread_ts ?? externalMessageId;
+      if (installation.orgId) {
+        const userName = await getUserName(client, event.user);
+        const result = await ingestOrgRoninMessage({
+          installationId: installation.id,
+          orgId: installation.orgId,
+          teamId,
+          channelId: event.channel,
+          threadId,
+          messageId: externalMessageId,
+          userId: event.user,
+          userName,
+          text: event.text,
+        });
+        const reply = withSlackExecutionFooter(result.reply, result.config);
+        const posted = await client.chat.postMessage({ channel: event.channel, text: reply, thread_ts: threadId });
+        await persistOutboundMessage({
+          conversationId: result.conversationId,
+          externalMessageId: posted.ts ?? `ronin:${result.runId}`,
+          content: reply,
+          channelId: event.channel,
+        });
+        console.log(JSON.stringify({ event: "slack.org_dm_answered", teamId, orgId: installation.orgId, runId: result.runId }));
+        return;
+      }
+
       const { conversation, isNew } = await recordInboundMessage({
         platform: "slack",
         platformTeamId: teamId,
         platformChannelId: event.channel,
-        platformThreadId: event.thread_ts ?? externalMessageId,
+        platformThreadId: threadId,
         externalMessageId,
         content: event.text,
         actorId: event.user,
@@ -70,12 +104,14 @@ async function handleSlackMessage(input: { client: App["client"]; event: SlackMe
         message: event.text,
         conversationId: conversation.id,
         eventId: externalMessageId,
+        installationId: installation.id,
+        actorId: event.user,
       });
       const reply = withSlackExecutionFooter(result.reply, result.config);
       const posted = await client.chat.postMessage({
         channel: event.channel,
         text: reply,
-        thread_ts: event.thread_ts ?? event.ts,
+        thread_ts: threadId,
       });
       await persistOutboundMessage({
         conversationId: conversation.id,
@@ -133,6 +169,15 @@ async function handleSlackMessage(input: { client: App["client"]; event: SlackMe
       console.log(JSON.stringify({ event: "slack.duplicate_ignored", channelId: event.channel }));
       return;
     }
+    if (error instanceof HostedInferenceLimitError) {
+      console.warn(JSON.stringify({ event: "slack.hosted_limit_reached", teamId, channelId: event.channel, error: error.message }));
+      await client.chat.postMessage({
+        channel: event.channel,
+        text: "Ronin’s hosted inference limit has been reached. Please try again later or ask the workspace admin to review the plan.",
+        thread_ts: event.thread_ts ?? event.ts,
+      });
+      return;
+    }
     const message = error instanceof Error ? error.message : "Ronin Slack connector failed.";
     console.error(JSON.stringify({ event: "slack.support_failed", channelId: event.channel, error: message }));
     await client.chat.postMessage({
@@ -164,21 +209,6 @@ async function persistOutboundMessage(input: {
       }),
     );
   }
-}
-
-async function isMappedChannel(teamId: string, channelId: string) {
-  return Boolean(
-    await prisma.channel.findUnique({
-      select: { id: true },
-      where: {
-        platform_platformTeamId_platformChannelId: {
-          platform: "slack",
-          platformTeamId: teamId,
-          platformChannelId: channelId,
-        },
-      },
-    }),
-  );
 }
 
 async function getChannelName(client: App["client"], channel: string) {

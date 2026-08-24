@@ -38,7 +38,7 @@ bun run --cwd apps/dashboard telegram:connector
 ## Safety Rules
 
 - Never commit `.env`, `*.db`, `key.pem`, `node_modules`, `.next`, `.source`, or local sandbox state.
-- Never put GitHub App private keys, Slack tokens, or Telegram tokens in client components or `NEXT_PUBLIC_*` variables.
+- Never put GitHub App private keys, Slack tokens, Telegram tokens, or hosted-model API keys in client components or `NEXT_PUBLIC_*` variables.
 - GitHub App private key handling belongs on the server side only.
 - Never pass a GitHub installation token through prompts, metadata, session messages, or the Centaur API. Ronin uses its GitHub App token server-side for compare and PR API calls.
 - Treat `CENTAUR_API_KEY` as a privileged service credential. Until Centaur has a scoped `ronin:` ingress identity, it must be admin- or Console-capable and stay server-only.
@@ -54,14 +54,14 @@ bun run --cwd apps/dashboard telegram:connector
 - Slack and Telegram message routing lives in `apps/dashboard/src/lib/message-ingest.ts`.
 - Dashboard data loading lives in `apps/dashboard/src/lib/dashboard-data.ts`.
 - Prisma schema lives in `apps/dashboard/prisma/schema.prisma`.
-- `Conversation` and `ConversationMessage` own platform-thread continuity. `Run` is one logical Ronin job; `AgentExecution` is one idempotent Centaur invocation within that job; `Artifact` is durable output. Do not collapse these responsibilities back together.
+- `Conversation` and `ConversationMessage` own platform-thread continuity. `Run` is one logical Ronin job; `AgentExecution` is one idempotent model/agent invocation within that job; `Artifact` is durable output. Do not collapse these responsibilities back together.
 
 ## Product Behavior To Preserve
 
 - Installing the GitHub App should be enough to start watching accessible repos.
 - Repository onboarding should create a run and, when useful, open a PR with real file changes.
 - Push webhooks should compare diffs and update docs/changelogs/support artifacts when needed.
-- Slack and Telegram must resolve channel/chat mappings before invoking the Centaur execution seam.
+- Slack channel mentions and Telegram messages must resolve channel/chat mappings before invoking Centaur. Slack DMs resolve the workspace installation: connected installations use org-scoped hosted inference context; unconnected installations use the inference-only public profile.
 - Action requests from mapped support channels should open PRs rather than editing main directly.
 - Ronin should store artifacts and context in its own database; do not rely only on agent session memory.
 
@@ -81,7 +81,7 @@ The dashboard is an operator console, not a marketing landing page.
 - Add authorized Slack thread commands for inspecting and overriding harness, model, provider, and reasoning (`/ronin settings`, `/ronin model`, `/ronin reasoning`, `/ronin reset`). Public/external users must remain on operator-controlled defaults.
 - Deferred: add organization memberships and roles before internal and external users can share channels or repository context. For now, assume external users and employees use separate Slack channels.
 - Replace manual DM channel-ID mappings with an authorized onboarding and repository-selection flow.
-- Add a restricted public-conversation execution profile that cannot access company repositories, tools, or credentials; prompt instructions alone are not a security boundary.
+- Add organization-level hosted inference billing and BYOK, followed by compatible BYOM endpoints when customers require them.
 - Add a scoped `ronin:` Centaur service identity and renewable authentication instead of Console/admin-capable temporary credentials.
 - Broker narrowly scoped GitHub write credentials to Centaur for authorized branch pushes without exposing GitHub App installation tokens.
 - Finish hosted operations: production OAuth callback, TLS proxy, database backups/restores, process supervision, monitoring, and log collection.
