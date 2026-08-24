@@ -1,80 +1,81 @@
-import { authorizeMutation } from "@/lib/auth";
+import { authorizeOrgRequest, permissions } from "@/lib/authorization";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
-  const unauthorized = await authorizeMutation(request);
-  if (unauthorized) return unauthorized;
+  const auth = await authorizeOrgRequest(request, permissions.integrationsManage);
+  if (!auth.ok) return auth.response;
   try {
     const body = (await request.json()) as {
       chatId?: string;
       displayName?: string;
       repoId?: string;
       botUsername?: string;
+      accessMode?: string;
     };
 
     const platformChannelId = body.chatId?.trim();
     const repoId = body.repoId?.trim();
     const platformTeamId =
       body.botUsername?.trim().replace(/^@/, "") || process.env.TELEGRAM_BOT_USERNAME?.replace(/^@/, "") || "";
+    const accessMode = body.accessMode === "external" ? "external" : "internal";
+    if (accessMode === "external") {
+      return NextResponse.json({ error: "External routes require an approved public-knowledge, tool-free execution profile." }, { status: 409 });
+    }
 
     if (!platformChannelId || !repoId) {
       return NextResponse.json({ error: "chatId and repoId are required." }, { status: 400 });
     }
 
-    const repo = await prisma.repository.findUnique({
-      include: {
-        org: true,
-      },
-      where: {
-        id: repoId,
-      },
+    const repo = await prisma.repository.findFirst({
+      include: { org: true },
+      where: { id: repoId, orgId: auth.org.orgId },
     });
 
     if (!repo) {
       return NextResponse.json({ error: "Repository not found." }, { status: 404 });
     }
 
-    const channel = await prisma.channel.upsert({
-      create: {
-        allowedRepoIds: repo.id,
-        defaultRepoId: repo.id,
-        displayName: body.displayName?.trim() || platformChannelId,
-        orgId: repo.orgId,
-        platform: "telegram",
-        platformChannelId,
-        platformTeamId,
-      },
-      update: {
-        allowedRepoIds: repo.id,
-        defaultRepoId: repo.id,
-        displayName: body.displayName?.trim() || platformChannelId,
-        orgId: repo.orgId,
-      },
-      where: {
-        platform_platformTeamId_platformChannelId: {
+    const channel = await prisma.$transaction(async (tx) => {
+      const mapped = await tx.channel.upsert({
+        create: {
+          accessMode,
+          defaultRepoId: repo.id,
+          displayName: body.displayName?.trim() || platformChannelId,
+          orgId: repo.orgId,
           platform: "telegram",
           platformChannelId,
           platformTeamId,
         },
-      },
-    });
-
-    await prisma.auditLog.create({
-      data: {
-        action: "telegram.chat_mapped",
-        actorType: "operator",
-        metadata: JSON.stringify({
-          chat: channel.displayName,
-          platformChannelId,
-          platformTeamId,
-          repo: repo.fullName,
-        }),
-        orgId: repo.orgId,
-        repoId: repo.id,
-        target: platformChannelId,
-      },
+        update: {
+          accessMode,
+          defaultRepoId: repo.id,
+          displayName: body.displayName?.trim() || platformChannelId,
+          orgId: repo.orgId,
+        },
+        where: {
+          platform_platformTeamId_platformChannelId: {
+            platform: "telegram",
+            platformChannelId,
+            platformTeamId,
+          },
+        },
+      });
+      await tx.channelRepository.deleteMany({ where: { channelId: mapped.id } });
+      await tx.channelRepository.create({ data: { channelId: mapped.id, repoId: repo.id, orgId: repo.orgId } });
+      await tx.auditLog.create({
+        data: {
+          action: "telegram.chat_mapped",
+          actorType: "user",
+          actorId: auth.operator.session.id,
+          metadata: JSON.stringify({ chat: mapped.displayName, platformChannelId, platformTeamId, repo: repo.fullName, accessMode }),
+          orgId: repo.orgId,
+          repoId: repo.id,
+          target: platformChannelId,
+        },
+      });
+      return mapped;
     });
 
     revalidatePath("/");
@@ -95,18 +96,16 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const unauthorized = await authorizeMutation(request);
-  if (unauthorized) return unauthorized;
+  const auth = await authorizeOrgRequest(request, permissions.integrationsManage);
+  if (!auth.ok) return auth.response;
   try {
     const body = (await request.json()) as { id?: string };
     const id = body.id?.trim();
     if (!id) return NextResponse.json({ error: "id is required." }, { status: 400 });
 
-    const channel = await prisma.channel.findUnique({
-      include: {
-        defaultRepo: true,
-      },
-      where: { id },
+    const channel = await prisma.channel.findFirst({
+      include: { defaultRepo: true },
+      where: { id, orgId: auth.org.orgId },
     });
     if (!channel || channel.platform !== "telegram") {
       return NextResponse.json({ error: "Telegram route not found." }, { status: 404 });
@@ -117,7 +116,8 @@ export async function DELETE(request: Request) {
       prisma.auditLog.create({
         data: {
           action: "telegram.chat_unmapped",
-          actorType: "operator",
+          actorType: "user",
+          actorId: auth.operator.session.id,
           metadata: JSON.stringify({
             chat: channel.displayName,
             platformChannelId: channel.platformChannelId,

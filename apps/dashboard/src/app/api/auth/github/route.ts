@@ -6,7 +6,8 @@ export async function GET(request: Request) {
   const clientId = process.env.GITHUB_APP_CLIENT_ID;
   if (!clientId) return NextResponse.json({ error: "GITHUB_APP_CLIENT_ID is required." }, { status: 500 });
 
-  const state = await signOAuthState(crypto.randomUUID());
+  const pendingInstallationId = new URL(request.url).searchParams.get("installation_id")?.trim() || undefined;
+  const state = await signOAuthState(crypto.randomUUID(), pendingInstallationId);
   (await cookies()).set(OAUTH_STATE_COOKIE, state, {
     httpOnly: true,
     maxAge: 600,

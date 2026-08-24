@@ -9,6 +9,7 @@ type ConversationMessageInput = {
   content: string;
   actorId?: string;
   actorName?: string;
+  actorUserId?: string;
   orgId?: string;
   channelId?: string;
   run?: {
@@ -18,6 +19,8 @@ type ConversationMessageInput = {
     kind: string;
     input: string;
     summary?: string;
+    authorizedAction?: string;
+    authorization?: string;
   };
 };
 
@@ -56,10 +59,10 @@ export async function recordInboundMessage(input: ConversationMessageInput) {
 
     const [inserted] = await tx.$queryRaw<Array<{ id: string }>>`
       INSERT INTO "ConversationMessage" (
-        "id", "conversationId", "externalMessageId", "role", "actorId", "actorName", "content", "createdAt"
+        "id", "conversationId", "externalMessageId", "role", "actorId", "actorName", "actorUserId", "content", "createdAt"
       ) VALUES (
         ${crypto.randomUUID()}, ${conversation.id}, ${input.externalMessageId}, 'user',
-        ${input.actorId ?? null}, ${input.actorName ?? null}, ${input.content}, NOW()
+        ${input.actorId ?? null}, ${input.actorName ?? null}, ${input.actorUserId ?? null}, ${input.content}, NOW()
       )
       ON CONFLICT ("conversationId", "externalMessageId") DO NOTHING
       RETURNING "id"
@@ -73,7 +76,11 @@ export async function recordInboundMessage(input: ConversationMessageInput) {
       },
     });
 
-    if (message.content !== input.content || message.actorId !== (input.actorId ?? null)) {
+    if (
+      message.content !== input.content ||
+      message.actorId !== (input.actorId ?? null) ||
+      message.actorUserId !== (input.actorUserId ?? null)
+    ) {
       throw new Error("Duplicate platform message identity has conflicting content or actor.");
     }
 
@@ -87,6 +94,9 @@ export async function recordInboundMessage(input: ConversationMessageInput) {
             kind: runData.kind,
             input: runData.input,
             summary: runData.summary,
+            actorUserId: input.actorUserId,
+            authorizedAction: runData.authorizedAction,
+            authorization: runData.authorization,
             conversationId: conversation.id,
             sourceMessageId: message.id,
             status: "running",

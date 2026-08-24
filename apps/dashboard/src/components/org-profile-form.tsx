@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export function OrgProfileForm({ orgId, profile }: { orgId: string; profile: string | null }) {
+export function OrgProfileForm({ orgId, profile, canManage }: { orgId: string; profile: string | null; canManage: boolean }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,9 +38,10 @@ export function OrgProfileForm({ orgId, profile }: { orgId: string; profile: str
         id="org-profile"
         maxLength={8000}
         name="profile"
+        disabled={!canManage}
         placeholder="Products, users, terminology, support expectations, and other durable company context."
       />
-      <button className="ronin-button ronin-button-primary w-fit" disabled={saving} type="submit">
+      <button className="ronin-button ronin-button-primary w-fit" disabled={saving || !canManage} type="submit">
         {saving ? "Saving..." : "Save profile"}
       </button>
       {error ? <p className="text-sm text-ronin-danger">{error}</p> : null}

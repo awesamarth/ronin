@@ -17,6 +17,8 @@ export async function ingestOrgRoninMessage(input: {
   messageId: string;
   userId: string;
   userName?: string;
+  actorUserId: string;
+  authorization: { role: string; permission: string };
   text: string;
 }) {
   const runId = `message-${crypto.randomUUID()}`;
@@ -29,12 +31,15 @@ export async function ingestOrgRoninMessage(input: {
     content: input.text,
     actorId: input.userId,
     actorName: input.userName,
+    actorUserId: input.actorUserId,
     orgId: input.orgId,
     run: {
       id: runId,
       orgId: input.orgId,
       kind: "message.org_dm",
       input: JSON.stringify({ platform: "slack", teamId: input.teamId, channelId: input.channelId, userId: input.userId, text: input.text }),
+      authorizedAction: "support.internal",
+      authorization: JSON.stringify(input.authorization),
     },
   });
   if (!isNew || !run) throw new DuplicateMessageDelivery(`Message ${input.messageId} was already processed.`);
@@ -70,7 +75,7 @@ export async function ingestOrgRoninMessage(input: {
     const result = await runTrackedCentaurTask({
       runId,
       purpose: "org_dm",
-      threadKey: buildThreadKey(["org", input.orgId, conversation.id]),
+      threadKey: buildThreadKey(["org-v2", input.orgId, conversation.id]),
       idempotencyKey: `org-dm-${conversation.id}-${input.messageId}`,
       prompt: `${ORG_SYSTEM}\n\nOrganization: ${org.name}\nOperator profile:\n${org.profile?.trim() || "No operator profile has been provided."}\n\n${buildOrgPrompt({ text: input.text, repos: org.repos, artifacts, history })}`,
     });

@@ -79,6 +79,14 @@ export type SlackConnection = {
   }>;
 };
 
+export type OrgMember = {
+  userId: string;
+  displayName: string;
+  identity: string;
+  role: string;
+  status: string;
+};
+
 export type TelegramConnection = {
   botUsername: string;
   configured: boolean;
@@ -94,7 +102,26 @@ export type TelegramConnection = {
   }>;
 };
 
-export async function getLatestDashboardRun(): Promise<DashboardRun | null> {
+export async function getOrgMembers(orgId?: string): Promise<OrgMember[]> {
+  if (!orgId) return [];
+  const memberships = await prisma.orgMembership.findMany({
+    where: { orgId },
+    include: { user: { include: { identities: { orderBy: { createdAt: "asc" }, take: 1 } } } },
+    orderBy: { createdAt: "asc" },
+  });
+  return memberships.map((membership) => ({
+    userId: membership.userId,
+    displayName: membership.user.displayName ?? membership.user.identities[0]?.login ?? "Unknown user",
+    identity: membership.user.identities[0]
+      ? `${membership.user.identities[0].provider}:${membership.user.identities[0].login ?? membership.user.identities[0].providerAccountId}`
+      : "No identity",
+    role: membership.role,
+    status: membership.status,
+  }));
+}
+
+export async function getLatestDashboardRun(orgId?: string): Promise<DashboardRun | null> {
+  if (!orgId) return null;
   const run = await prisma.run.findFirst({
     include: {
       artifacts: {
@@ -107,6 +134,7 @@ export async function getLatestDashboardRun(): Promise<DashboardRun | null> {
       createdAt: "desc",
     },
     where: {
+      orgId,
       OR: [{ kind: { startsWith: "github." } }, { kind: "message.workspace_request" }],
     },
   });
@@ -130,8 +158,9 @@ export async function getLatestDashboardRun(): Promise<DashboardRun | null> {
   };
 }
 
-export async function getWorkspaceOverview(): Promise<WorkspaceOverview | null> {
-  const org = await prisma.org.findFirst({
+export async function getWorkspaceOverview(orgId?: string): Promise<WorkspaceOverview | null> {
+  if (!orgId) return null;
+  const org = await prisma.org.findUnique({
     include: {
       repos: {
         orderBy: {
@@ -142,9 +171,7 @@ export async function getWorkspaceOverview(): Promise<WorkspaceOverview | null> 
         },
       },
     },
-    orderBy: {
-      createdAt: "asc",
-    },
+    where: { id: orgId },
   });
 
   if (!org) return null;
@@ -170,7 +197,8 @@ export async function getWorkspaceOverview(): Promise<WorkspaceOverview | null> 
   };
 }
 
-export async function getActivityFeed(): Promise<ActivityEvent[]> {
+export async function getActivityFeed(orgId?: string): Promise<ActivityEvent[]> {
+  if (!orgId) return [];
   const logs = await prisma.auditLog.findMany({
     include: {
       repo: true,
@@ -180,6 +208,7 @@ export async function getActivityFeed(): Promise<ActivityEvent[]> {
     },
     take: 8,
     where: {
+      orgId,
       action: {
         in: [
           "github.push",
@@ -215,7 +244,7 @@ function parseMetadata(metadata: string | null): Record<string, unknown> {
   }
 }
 
-export async function getSlackConnection(): Promise<SlackConnection> {
+export async function getSlackConnection(orgId?: string): Promise<SlackConnection> {
   const teamId = process.env.SLACK_TEAM_ID ?? "";
   const installation = teamId ? await prisma.slackInstallation.findUnique({ where: { teamId }, select: { orgId: true } }) : null;
   const org = await prisma.org.findFirst({
@@ -241,10 +270,7 @@ export async function getSlackConnection(): Promise<SlackConnection> {
         },
       },
     },
-    where: installation?.orgId ? { id: installation.orgId } : undefined,
-    orderBy: {
-      createdAt: "asc",
-    },
+    where: orgId && installation?.orgId === orgId ? { id: orgId } : { id: "__unavailable__" },
   });
 
   return {
@@ -266,9 +292,9 @@ export async function getSlackConnection(): Promise<SlackConnection> {
   };
 }
 
-export async function getTelegramConnection(): Promise<TelegramConnection> {
+export async function getTelegramConnection(orgId?: string): Promise<TelegramConnection> {
   const botUsername = process.env.TELEGRAM_BOT_USERNAME?.replace(/^@/, "") ?? "";
-  const org = await prisma.org.findFirst({
+  const org = orgId ? await prisma.org.findUnique({
     include: {
       channels: {
         include: {
@@ -291,10 +317,8 @@ export async function getTelegramConnection(): Promise<TelegramConnection> {
         },
       },
     },
-    orderBy: {
-      createdAt: "asc",
-    },
-  });
+    where: { id: orgId },
+  }) : null;
 
   return {
     botUsername,

@@ -10,7 +10,7 @@ Ronin is a Bun workspace with two Next.js apps:
 - `apps/docs`: the Fumadocs documentation app.
 - `skills/ronin`: the Ronin skill used by the execution agent.
 
-Ronin's core responsibility is routing and control: orgs, GitHub installations, watched repos, channel mappings, run records, artifacts, audit logs, and product policy. PostgreSQL is required. The operator console uses allowlisted GitHub OAuth. The execution agent handles reasoning and edits only after Ronin has resolved the target context. Repo execution is delegated to Centaur; Ronin is harness-agnostic.
+Ronin's core responsibility is routing and control: orgs, GitHub installations, watched repos, channel mappings, run records, artifacts, audit logs, and product policy. PostgreSQL is required. The operator console uses GitHub OAuth plus organization membership; an optional login allowlist gates private-beta admission only. The execution agent handles reasoning and edits only after Ronin has resolved the target context. Repo execution is delegated to Centaur; Ronin is harness-agnostic.
 
 ## Commands
 
@@ -54,7 +54,9 @@ bun run --cwd apps/dashboard telegram:connector
 - Slack and Telegram message routing lives in `apps/dashboard/src/lib/message-ingest.ts`.
 - Dashboard data loading lives in `apps/dashboard/src/lib/dashboard-data.ts`.
 - Prisma schema lives in `apps/dashboard/prisma/schema.prisma`.
-- `Conversation` and `ConversationMessage` own platform-thread continuity. `Run` is one logical Ronin job; `AgentExecution` is one idempotent model/agent invocation within that job; `Artifact` is durable output. Do not collapse these responsibilities back together.
+- `UserIdentity` maps provider accounts to a Ronin user; `OrgMembership` is the tenant boundary with owner/admin/member/external roles. Every user-facing query must start from the authenticated active membership and include its `orgId`.
+- Internal Slack channels auto-provision full home-workspace users as members. External Slack channels auto-provision external users; guests and Slack Connect users never receive internal membership implicitly. Explicitly mapped Telegram chats use their configured internal/external audience as the membership trust boundary.
+- `Conversation` and `ConversationMessage` own platform-thread continuity. `Run` is one logical Ronin job and carries an immutable actor/action authorization snapshot; `AgentExecution` is one idempotent model/agent invocation within that job; `Artifact` is durable output. Do not collapse these responsibilities back together.
 
 ## Product Behavior To Preserve
 
@@ -79,11 +81,15 @@ The dashboard is an operator console, not a marketing landing page.
 
 - Add a persistent `WorkItem` only when Ronin implements an actionable multi-step lifecycle spanning conversations, runs, review, and resolution; do not use `Run` as that lifecycle object.
 - Add authorized Slack thread commands for inspecting and overriding harness, model, provider, and reasoning (`/ronin settings`, `/ronin model`, `/ronin reasoning`, `/ronin reset`). Public/external users must remain on operator-controlled defaults.
-- Deferred: add organization memberships and roles before internal and external users can share channels or repository context. For now, assume external users and employees use separate Slack channels.
+- Split PostgreSQL access into tenant and system roles, then enable forced RLS using transaction-scoped org context. Current protection is centralized membership authorization, mandatory org-scoped queries, same-org database triggers, and cross-tenant tests; do not add an unscoped user-facing query.
+- Add an operator-approved public profile and external artifact visibility, then route external channels through tool-free hosted inference. External mapped execution remains fail-closed until that boundary exists.
+- Add owner-managed membership invitations for users who have not interacted with Ronin yet.
+- Add verified identity linking so one person can explicitly join their GitHub and Slack identities; never auto-link by display name or unverified email.
+- Centaur deployments serving Ronin must set `default_sandbox_repo_cache=none`; Ronin rejects any reported conflicting capability. Never re-enable a shared repository cache for tenant executions. Broker exact short-lived repository credentials into the individual session before private repository work.
 - Replace manual DM channel-ID mappings with an authorized onboarding and repository-selection flow.
 - Replace the single-workspace Slack bot-token setup with Slack OAuth installations and encrypted per-workspace bot credentials for production multi-workspace SaaS.
 - Add organization-level hosted inference billing and BYOK, followed by compatible BYOM endpoints when customers require them.
-- Add a scoped `ronin:` Centaur service identity and renewable authentication instead of Console/admin-capable temporary credentials.
+- Add a least-privilege renewable Ronin-to-Centaur service credential instead of Console/admin-capable temporary credentials; tenant authorization remains in Ronin and per-session sandbox scope.
 - Broker narrowly scoped GitHub write credentials to Centaur for authorized branch pushes without exposing GitHub App installation tokens.
 - Finish hosted operations: production OAuth callback, TLS proxy, database backups/restores, process supervision, monitoring, and log collection.
 - Validate Telegram live without contacting existing users unexpectedly.

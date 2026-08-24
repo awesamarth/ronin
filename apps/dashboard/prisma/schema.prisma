@@ -18,8 +18,10 @@ model Org {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
+  memberships        OrgMembership[]
   repos              Repository[]
   channels           Channel[]
+  channelRoutes      ChannelRepository[]
   slackInstallations SlackInstallation[]
   conversations      Conversation[]
   runs               Run[]
@@ -27,6 +29,64 @@ model Org {
   artifacts          Artifact[]
   githubEvents       GitHubEvent[]
   auditLogs          AuditLog[]
+}
+
+model User {
+  id              String   @id @default(cuid())
+  displayName     String?
+  avatarUrl       String?
+  lastActiveOrgId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  identities               UserIdentity[]
+  memberships              OrgMembership[]
+  githubInstallationAccess GitHubInstallationAccess[]
+  messages                 ConversationMessage[]
+  runs                     Run[]
+}
+
+model UserIdentity {
+  id                String   @id @default(cuid())
+  userId            String
+  provider          String
+  providerAccountId String
+  login             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model GitHubInstallationAccess {
+  id             String   @id @default(cuid())
+  userId         String
+  installationId String
+  verifiedAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, installationId])
+  @@index([installationId])
+}
+
+model OrgMembership {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  role      String
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org  Org  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId])
+  @@index([userId, status])
 }
 
 model Repository {
@@ -45,12 +105,13 @@ model Repository {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  org          Org           @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  channels     Channel[]
-  runs         Run[]
-  artifacts    Artifact[]
-  githubEvents GitHubEvent[]
-  auditLogs    AuditLog[]
+  org           Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  channels      Channel[]           @relation("ChannelDefaultRepo")
+  channelRoutes ChannelRepository[]
+  runs          Run[]
+  artifacts     Artifact[]
+  githubEvents  GitHubEvent[]
+  auditLogs     AuditLog[]
 
   @@unique([orgId, fullName])
   @@index([orgId])
@@ -101,16 +162,32 @@ model Channel {
   platformTeamId    String?
   platformChannelId String
   displayName       String?
-  allowedRepoIds    String?
+  accessMode        String   @default("internal")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  org           Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  defaultRepo   Repository?    @relation(fields: [defaultRepoId], references: [id], onDelete: SetNull)
+  org           Org                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  defaultRepo   Repository?         @relation("ChannelDefaultRepo", fields: [defaultRepoId], references: [id], onDelete: SetNull)
+  allowedRepos  ChannelRepository[]
   conversations Conversation[]
 
   @@unique([platform, platformTeamId, platformChannelId])
   @@index([orgId])
+}
+
+model ChannelRepository {
+  channelId String
+  repoId    String
+  orgId     String
+  createdAt DateTime @default(now())
+
+  channel Channel    @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  repo    Repository @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  org     Org        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@id([channelId, repoId])
+  @@index([orgId])
+  @@index([repoId])
 }
 
 model Conversation {
@@ -142,14 +219,17 @@ model ConversationMessage {
   role              String
   actorId           String?
   actorName         String?
+  actorUserId       String?
   content           String
   createdAt         DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  actorUser    User?        @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
   sourceRun    Run?         @relation("RunSourceMessage")
 
   @@unique([conversationId, externalMessageId])
   @@index([conversationId, createdAt])
+  @@index([actorUserId])
 }
 
 model Run {
@@ -158,6 +238,9 @@ model Run {
   repoId             String?
   conversationId     String?
   sourceMessageId    String?   @unique
+  actorUserId        String?
+  authorizedAction   String?
+  authorization      String?
   kind               String
   status             String
   summary            String?
@@ -172,9 +255,10 @@ model Run {
   attempt            Int       @default(0)
 
   org           Org                  @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  repo          Repository?          @relation(fields: [repoId], references: [id], onDelete: SetNull)
-  conversation  Conversation?        @relation(fields: [conversationId], references: [id], onDelete: SetNull)
-  sourceMessage ConversationMessage? @relation("RunSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
+  repo          Repository?          @relation(fields: [repoId], references: [id], onDelete: Restrict)
+  conversation  Conversation?        @relation(fields: [conversationId], references: [id], onDelete: Restrict)
+  sourceMessage ConversationMessage? @relation("RunSourceMessage", fields: [sourceMessageId], references: [id], onDelete: Restrict)
+  actorUser     User?                @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
   executions    AgentExecution[]
   artifacts     Artifact[]
   auditLogs     AuditLog[]
@@ -182,6 +266,7 @@ model Run {
   @@index([orgId, kind, createdAt])
   @@index([repoId])
   @@index([conversationId, createdAt])
+  @@index([actorUserId])
 }
 
 model AgentExecution {

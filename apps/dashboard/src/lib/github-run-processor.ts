@@ -62,11 +62,12 @@ type CompareResponse = {
 
 const staleRunningMs = () => Number(process.env.RONIN_GITHUB_WORKER_STALE_RUNNING_MS ?? 900_000);
 
-export async function processLatestQueuedGithubRun() {
+export async function processLatestQueuedGithubRun(orgId?: string) {
   const [claimed] = await prisma.$queryRaw<Array<{ id: string }>>`
     WITH candidate AS (
       SELECT id FROM "Run"
       WHERE kind LIKE 'github.%'
+        AND (${orgId ?? null}::text IS NULL OR "orgId" = ${orgId ?? null})
         AND (
           status = 'queued'
           OR (status = 'running' AND "startedAt" < NOW() - (${staleRunningMs()} * INTERVAL '1 millisecond'))
@@ -84,11 +85,12 @@ export async function processLatestQueuedGithubRun() {
   return claimed ? processClaimedGithubRun(claimed.id) : null;
 }
 
-export async function processQueuedGithubRun(runId: string) {
+export async function processQueuedGithubRun(runId: string, orgId?: string) {
   const staleBefore = new Date(Date.now() - staleRunningMs());
   const claimed = await prisma.run.updateMany({
     where: {
       id: runId,
+      ...(orgId ? { orgId } : {}),
       kind: { startsWith: "github." },
       OR: [{ status: "queued" }, { status: "running", startedAt: { lt: staleBefore } }],
     },

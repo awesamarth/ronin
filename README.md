@@ -110,11 +110,11 @@ Important values:
 - `DATABASE_URL`: required PostgreSQL connection string.
 - `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_WEBHOOK_SECRET`: GitHub App and operator OAuth configuration. Set the callback URL to `/api/auth/github/callback` on `RONIN_BASE_URL`.
 - `GITHUB_APP_PRIVATE_KEY` or `GITHUB_APP_PRIVATE_KEY_PATH`: private key used only on the backend.
-- `RONIN_SESSION_SECRET`, `RONIN_ALLOWED_GITHUB_USERS`: signed operator sessions and the GitHub-login allowlist.
+- `RONIN_SESSION_SECRET`: signed operator sessions. `RONIN_ALLOWED_GITHUB_USERS` is an optional private-beta admission allowlist; tenant access always comes from organization membership.
 - `SLACK_APP_TOKEN`, `SLACK_BOT_TOKEN`: Slack Socket Mode connector.
 - `RONIN_HOSTED_LLM_API_KEY`: hosted inference credential for unconnected Slack workspaces. This public path is model-only and never enters a Centaur tool sandbox. Connected-org DMs use Centaur with organization context. Configure public model, endpoint, quotas, prompt/output limits, concurrency, and timeout with the `RONIN_HOSTED_*` variables in `.env.example`.
 - Telegram token variables if running the Telegram connector.
-- `CENTAUR_API_URL`, `CENTAUR_API_KEY`: Centaur execution backend configuration. `ronin:*` sessions currently require an admin- or Console-capable credential; a Slack ingress key is prefix-restricted and will not work.
+- `CENTAUR_API_URL`, `CENTAUR_API_KEY`: Centaur execution backend configuration. Centaur must be configured with `default_sandbox_repo_cache=none`; Ronin rejects any reported session capability that differs from `RONIN_CENTAUR_REPO_CACHE_ACCESS` (production default: `none`), preventing shared repository mounts across tenants. `ronin:*` sessions currently require an admin- or Console-capable credential; a least-privilege renewable service credential remains required.
 - `RONIN_HARNESS`: fallback harness (defaults to `pi`); repositories may override harness/model/provider/reasoning.
 - Optional `RONIN_MODEL`, `RONIN_PROVIDER`, `RONIN_REASONING`, `CENTAUR_TIMEOUT_MS`.
 
@@ -137,7 +137,7 @@ docker compose --profile slack up -d slack
 docker compose --profile telegram up -d telegram
 ```
 
-For a hosted deployment, set a strong `RONIN_SESSION_SECRET`, `RONIN_ALLOWED_GITHUB_USERS`, public `RONIN_BASE_URL`, and `GITHUB_APP_PRIVATE_KEY` in `apps/dashboard/.env`; terminate TLS at a reverse proxy and back up the `postgres-data` volume. The image never copies local env files or `key.pem`.
+For a hosted deployment, set a strong `RONIN_SESSION_SECRET`, public `RONIN_BASE_URL`, and `GITHUB_APP_PRIVATE_KEY` (plus `RONIN_ALLOWED_GITHUB_USERS` for a private beta) in `apps/dashboard/.env`; terminate TLS at a reverse proxy and back up the `postgres-data` volume. The image never copies local env files or `key.pem`.
 
 ## Status
 
@@ -149,10 +149,11 @@ The current build is real for:
 - PR creation from Ronin branches.
 - Slack and Telegram channel-to-repo routing.
 - Slack workspace installation routing: connected DMs use org profile, repositories, conversation history, and generated knowledge; unconnected DMs use the isolated public profile.
+- Tenant identities, active organization selection, owner/admin/member/external roles, scoped dashboard/API queries, immutable Run authorization snapshots, and database-enforced same-org references. External mapped execution remains fail-closed until operators can publish an explicit public profile and public artifacts to the tool-free inference path.
 - PostgreSQL-enforced hosted inference quotas per Slack user and workspace.
 - Slack action requests opening code/docs PRs.
 
-The dashboard now requires PostgreSQL and allowlisted GitHub OAuth. GitHub work is atomically claimed by the worker and safely retried through Centaur idempotency. Deployment still needs hosted process supervision, a public webhook URL, per-customer operator membership beyond the current allowlist, and a scoped Centaur `ronin:` service identity instead of an admin-capable credential.
+The dashboard now requires PostgreSQL and GitHub OAuth; an optional allowlist can gate private-beta admission. GitHub work is atomically claimed by the worker and safely retried through Centaur idempotency. Deployment still needs hosted process supervision, a public webhook URL, forced PostgreSQL RLS with split tenant/system roles, and a least-privilege renewable Ronin-to-Centaur credential instead of the temporary Console credential.
 
 ## Positioning
 

@@ -1,3 +1,4 @@
+import { permissions, roleHasPermission } from "./authorization";
 import { prisma } from "./prisma";
 import { buildThreadKey } from "./centaur-client";
 import { recordInboundMessage } from "./conversations";
@@ -12,6 +13,9 @@ export type MessageIngestInput = {
   channelName?: string;
   userId: string;
   userName?: string;
+  actorUserId?: string;
+  authorizedAction?: string;
+  authorization?: { role: string; permission: string };
   messageId?: string;
   threadId?: string;
   text: string;
@@ -20,6 +24,9 @@ export type MessageIngestInput = {
 export class DuplicateMessageDelivery extends Error {}
 
 export async function ingestSupportMessage(input: MessageIngestInput) {
+  if (input.authorization?.role === "external") {
+    throw new Error("External support execution is disabled until an approved public-knowledge, tool-free profile is configured.");
+  }
   const channel = await resolveChannelContext(input);
   const repo = channel.defaultRepo ?? (await getPrimaryRepository(channel.orgId));
   if (!repo) throw new Error(`No watched repository is configured for ${input.platform}:${input.channelId}.`);
@@ -35,6 +42,7 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
     content: input.text,
     actorId: input.userId,
     actorName: input.userName,
+    actorUserId: input.actorUserId,
     orgId: channel.orgId,
     channelId: channel.id,
     run: {
@@ -44,6 +52,8 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
       kind: "message.support_answer",
       input: JSON.stringify(input),
       summary: `Support message from ${input.platform}:${input.channelId}`,
+      authorizedAction: input.authorizedAction,
+      authorization: input.authorization ? JSON.stringify(input.authorization) : undefined,
     },
   });
   if (!isNew || !run) throw new DuplicateMessageDelivery(`Message ${externalMessageId} was already processed.`);
@@ -235,7 +245,8 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
       };
     };
 
-    const directActionRequest = detectWorkspaceActionRequest(input.text);
+    const canRequestWorkspaceChange = Boolean(input.authorization && roleHasPermission(input.authorization.role, permissions.runsExecute));
+    const directActionRequest = canRequestWorkspaceChange ? detectWorkspaceActionRequest(input.text) : null;
     if (directActionRequest) {
       return await processWorkspaceRequest({
         actionRequest: directActionRequest,
@@ -249,7 +260,7 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
     const agent = await runTrackedCentaurTask({
       runId: run.id,
       purpose: "support",
-      threadKey: buildThreadKey(["support", repo.fullName, conversation.id]),
+      threadKey: buildThreadKey(["support", channel.orgId, repo.fullName, conversation.id]),
       prompt: buildSupportPrompt({ artifacts: recentArtifacts, input, latestRun, messages: priorMessages, repoName: repo.fullName, repoUrl }),
       idempotencyKey: `${run.id}:support`,
       config: {
@@ -260,9 +271,13 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
       },
     });
     const parsed = parseAgentJson(agent.rawOutput);
-    const reply = stringOrFallback(parsed.reply, agent.rawOutput);
+    let reply = stringOrFallback(parsed.reply, agent.rawOutput);
     const needsDocsUpdate = Boolean(parsed.needsDocsUpdate);
-    const intent = parsed.intent === "workspace_change" ? "workspace_change" : "answer";
+    let intent = parsed.intent === "workspace_change" ? "workspace_change" : "answer";
+    if (intent === "workspace_change" && !canRequestWorkspaceChange) {
+      intent = "answer";
+      reply = `${reply}\n\nThis conversation is not authorized to make repository changes.`;
+    }
 
     if (intent === "workspace_change") {
       return await processWorkspaceRequest({
@@ -429,6 +444,10 @@ Channel: ${input.input.channelName ?? input.input.channelId}
 User: ${input.input.userName ?? input.input.userId}
 Repo: ${input.repoName}
 Repo URL: ${input.repoUrl}
+
+Authorization:
+- Role: ${input.input.authorization?.role ?? "unverified"}
+- Repository changes: ${input.input.authorization && roleHasPermission(input.input.authorization.role, permissions.runsExecute) ? "allowed through reviewable PRs" : "not allowed"}
 
 Conversation history:
 ${input.messages.length ? input.messages.map((message) => `${message.role === "assistant" ? "Ronin" : message.actorName ?? "User"}: ${message.content.slice(0, 2000)}`).join("\n") : "No earlier messages in this conversation."}

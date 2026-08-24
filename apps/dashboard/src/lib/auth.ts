@@ -9,6 +9,7 @@ export type OperatorSession = {
   login: string;
   name?: string;
   avatarUrl?: string;
+  activeOrgId?: string;
 };
 
 function authDisabled() {
@@ -29,8 +30,7 @@ export function allowedGithubLogin(login: string) {
   const allowed = process.env.RONIN_ALLOWED_GITHUB_USERS?.split(",")
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean);
-  if (!allowed?.length) throw new Error("RONIN_ALLOWED_GITHUB_USERS is required.");
-  return allowed.includes(login.toLowerCase());
+  return !allowed?.length || allowed.includes(login.toLowerCase());
 }
 
 export async function signOperatorSession(operator: OperatorSession, expiresIn = "12h") {
@@ -50,14 +50,15 @@ export async function verifyOperatorSession(token: string): Promise<OperatorSess
       login: payload.login,
       name: typeof payload.name === "string" ? payload.name : undefined,
       avatarUrl: typeof payload.avatarUrl === "string" ? payload.avatarUrl : undefined,
+      activeOrgId: typeof payload.activeOrgId === "string" ? payload.activeOrgId : undefined,
     };
   } catch {
     return null;
   }
 }
 
-export async function signOAuthState(nonce: string) {
-  return new SignJWT({ nonce, token_use: "ronin_oauth_state" })
+export async function signOAuthState(nonce: string, pendingInstallationId?: string) {
+  return new SignJWT({ nonce, pendingInstallationId, token_use: "ronin_oauth_state" })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("10m")
@@ -67,9 +68,13 @@ export async function signOAuthState(nonce: string) {
 export async function verifyOAuthState(token: string) {
   try {
     const { payload } = await jwtVerify(token, secret(), { algorithms: ["HS256"] });
-    return payload.token_use === "ronin_oauth_state" && typeof payload.nonce === "string";
+    if (payload.token_use !== "ronin_oauth_state" || typeof payload.nonce !== "string") return null;
+    return {
+      nonce: payload.nonce,
+      pendingInstallationId: typeof payload.pendingInstallationId === "string" ? payload.pendingInstallationId : undefined,
+    };
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -83,12 +88,15 @@ export async function authorizeMutation(request: Request): Promise<Response | nu
   if (!(await getOperatorSession())) {
     return Response.json({ ok: false, error: "Authentication required." }, { status: 401 });
   }
+  return validateRequestOrigin(request);
+}
+
+export function validateRequestOrigin(request: Request): Response | null {
   const origin = request.headers.get("origin");
   const expected = new URL(process.env.RONIN_BASE_URL || request.url).origin;
-  if (origin && origin !== expected) {
-    return Response.json({ ok: false, error: "Invalid request origin." }, { status: 403 });
-  }
-  return null;
+  return origin && origin !== expected
+    ? Response.json({ ok: false, error: "Invalid request origin." }, { status: 403 })
+    : null;
 }
 
 export function secureCookie() {

@@ -24,6 +24,7 @@ export function SlackChannelMappingForm({ slack }: { slack: SlackConnection }) {
         displayName: formData.get("displayName"),
         repoId: formData.get("repoId"),
         teamId: slack.teamId,
+        accessMode: formData.get("accessMode"),
       }),
       headers: {
         "content-type": "application/json",
@@ -119,7 +120,8 @@ export function SlackChannelMappingForm({ slack }: { slack: SlackConnection }) {
           </div>
         </div>
 
-        <div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div>
           <label className="text-xs font-medium uppercase tracking-[0.2em] text-ronin-muted" htmlFor="slack-repo-id">
             Default repo
           </label>
@@ -135,6 +137,21 @@ export function SlackChannelMappingForm({ slack }: { slack: SlackConnection }) {
               </option>
             ))}
           </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium uppercase tracking-[0.2em] text-ronin-muted" htmlFor="slack-access-mode">
+              Audience
+            </label>
+            <select
+              className="mt-2 w-full border border-ronin-border bg-ronin-background px-3 py-2.5 font-mono text-sm text-ronin-foreground outline-none transition focus:border-ronin-strong-border"
+              defaultValue="internal"
+              id="slack-access-mode"
+              name="accessMode"
+            >
+              <option value="internal">Workspace members</option>
+              <option disabled value="external">External support (requires public profile)</option>
+            </select>
+          </div>
         </div>
 
         <button

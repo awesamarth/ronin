@@ -1,8 +1,10 @@
 import { ConfigureActions } from "@/components/configure-actions";
-import { getOperatorSession } from "@/lib/auth";
+import { getOperatorContext, permissions, roleHasPermission } from "@/lib/authorization";
 import { GitHubInstallSync } from "@/components/github-install-sync";
 import { GitHubRepoActions } from "@/components/github-repo-actions";
+import { OrgMembers } from "@/components/org-members";
 import { OrgProfileForm } from "@/components/org-profile-form";
+import { OrgSwitcher } from "@/components/org-switcher";
 import { RepoAgentSettings } from "@/components/repo-agent-settings";
 import { StatusPill } from "@/components/status-pill";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -10,6 +12,7 @@ import {
   type DashboardRun,
   getActivityFeed,
   getLatestDashboardRun,
+  getOrgMembers,
   getSlackConnection,
   getTelegramConnection,
   getWorkspaceOverview,
@@ -26,15 +29,21 @@ export default async function Home({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  if (!(await getOperatorSession())) redirect("/login");
+  const operator = await getOperatorContext();
+  if (!operator) redirect("/login");
+  if (operator.activeMembership && !roleHasPermission(operator.activeMembership.role, permissions.dashboardRead)) redirect("/login?error=forbidden");
+  const orgId = operator.activeMembership?.orgId;
+  const canManage = operator.activeMembership?.role === "owner" || operator.activeMembership?.role === "admin";
   const resolvedSearchParams = await searchParams;
   const installationId = getSingleSearchParam(resolvedSearchParams?.installation_id);
-  const [workspace, dbRun, activity, slack, telegram] = await Promise.all([
-    getWorkspaceOverview(),
-    getLatestDashboardRun(),
-    getActivityFeed(),
-    getSlackConnection(),
-    getTelegramConnection(),
+  const installationVerified = getSingleSearchParam(resolvedSearchParams?.verified_installation) === "1";
+  const [workspace, dbRun, activity, slack, telegram, members] = await Promise.all([
+    getWorkspaceOverview(orgId),
+    getLatestDashboardRun(orgId),
+    getActivityFeed(orgId),
+    getSlackConnection(orgId),
+    getTelegramConnection(orgId),
+    getOrgMembers(orgId),
   ]);
   const docsUrl = process.env.NEXT_PUBLIC_DOCS_URL || "http://localhost:3005/docs";
   const githubInstallUrl = process.env.GITHUB_APP_INSTALL_URL || "https://github.com/apps/ronin-agent/installations/new";
@@ -54,6 +63,10 @@ export default async function Home({
               </p>
             </div>
             <nav className="flex shrink-0 items-center gap-2">
+              <OrgSwitcher
+                activeOrgId={orgId}
+                orgs={operator.memberships.map((membership) => ({ orgId: membership.orgId, orgName: membership.orgName }))}
+              />
               <Link className="ronin-button gap-1.5" href={docsUrl} rel="noreferrer" target="_blank">
                 Docs
                 <ExternalLink aria-hidden="true" size={14} strokeWidth={1.8} />
@@ -68,7 +81,7 @@ export default async function Home({
             </nav>
           </div>
         </header>
-        <GitHubInstallSync installationId={installationId} />
+        <GitHubInstallSync installationId={installationId} verified={installationVerified} />
 
         <section className="grid border-b border-ronin-border lg:grid-cols-[2fr_3fr]">
           <div className="border-b border-ronin-border p-5 md:p-8 lg:border-b-0 lg:border-r">
@@ -104,12 +117,18 @@ export default async function Home({
               <FactRow label="GitHub App" value={workspace?.githubConnected ? "Connected" : "Not connected"} />
               <FactRow label="Repos" value={workspace ? String(workspace.repos.length) : "0"} />
             </div>
-            <GitHubRepoActions connected={Boolean(workspace?.githubConnected)} installUrl={githubInstallUrl} />
-            {workspace ? <OrgProfileForm orgId={workspace.orgId} profile={workspace.profile} /> : null}
+            {canManage || !workspace ? <GitHubRepoActions connected={Boolean(workspace?.githubConnected)} installUrl={githubInstallUrl} /> : null}
+            {workspace ? (
+              <OrgProfileForm
+                orgId={workspace.orgId}
+                profile={workspace.profile}
+                canManage={canManage}
+              />
+            ) : null}
 
             <div className="mt-5 grid gap-3">
               {workspace?.repos.length ? (
-                workspace.repos.map((repo) => <RepoCard key={repo.id} repo={repo} />)
+                workspace.repos.map((repo) => <RepoCard canManage={canManage} key={repo.id} repo={repo} />)
               ) : (
                 <div className="border border-ronin-border bg-ronin-panel p-4 text-sm leading-6 text-ronin-muted">
                   Install the GitHub App to start watching repositories.
@@ -194,8 +213,12 @@ export default async function Home({
               Connector mappings are setup actions. They stay out of the main work surface.
             </p>
             <div className="mt-5">
-              <ConfigureActions slack={slack} telegram={telegram} />
+              {canManage ? <ConfigureActions slack={slack} telegram={telegram} /> : null}
             </div>
+            <OrgMembers
+              canManage={canManage}
+              members={members}
+            />
             <div className="mt-5 grid border border-ronin-border bg-ronin-panel">
               <FactRow label="Slack" value={slack.configured ? (slack.channels.length ? `${slack.channels.length} mapped` : "Configured") : "Not configured"} />
               <FactRow label="Telegram" value={telegram.configured ? (telegram.chats.length ? `${telegram.chats.length} mapped` : "Configured") : "Not configured"} />
@@ -255,7 +278,9 @@ function FactRow({ label, value }: { label: string; value: string }) {
 
 function RepoCard({
   repo,
+  canManage,
 }: {
+  canManage: boolean;
   repo: {
     id: string;
     capabilities: string[];
@@ -287,7 +312,7 @@ function RepoCard({
         ))}
         {repo.latestKnownSha ? <span className="border border-ronin-border bg-ronin-panel-muted px-2 py-1">{repo.latestKnownSha.slice(0, 7)}</span> : null}
       </div>
-      <RepoAgentSettings repo={repo} />
+      {canManage ? <RepoAgentSettings repo={repo} /> : null}
     </div>
   );
 }

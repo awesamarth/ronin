@@ -1,5 +1,6 @@
 import "dotenv/config";
 
+import { authorizeTelegramActor } from "../lib/authorization";
 import { recordOutboundMessage } from "../lib/conversations";
 import { DuplicateMessageDelivery, ingestSupportMessage } from "../lib/message-ingest";
 import { prisma } from "../lib/prisma";
@@ -113,6 +114,25 @@ async function handleUpdate(update: TelegramUpdate) {
   const userName = getUserName(message.from);
 
   try {
+    const channel = await prisma.channel.findUnique({
+      where: {
+        platform_platformTeamId_platformChannelId: {
+          platform: "telegram",
+          platformTeamId: botUsername ?? "",
+          platformChannelId: chatContextId,
+        },
+      },
+      select: { orgId: true, accessMode: true },
+    });
+    if (!channel) throw new Error("No Ronin channel mapping exists for this Telegram chat.");
+    const accessMode = channel.accessMode === "external" ? "external" : "internal";
+    const actor = await authorizeTelegramActor({
+      orgId: channel.orgId,
+      botUsername: botUsername ?? "",
+      userId,
+      displayName: userName,
+      accessMode,
+    });
     const result = await ingestSupportMessage({
       channelId: chatContextId,
       channelName: chatName,
@@ -123,6 +143,9 @@ async function handleUpdate(update: TelegramUpdate) {
       text: parsedText,
       userId,
       userName,
+      actorUserId: actor.userId,
+      authorizedAction: accessMode === "external" ? "support.external" : "support.internal",
+      authorization: { role: actor.role, permission: actor.permission },
     });
 
     const sent = await telegramApi<TelegramMessage>("sendMessage", {

@@ -106,6 +106,15 @@ export async function runCentaurTask(input: {
   if (!sessionRes.ok) {
     throw new CentaurError(`Session create failed: ${sessionRes.status}`, await safeText(sessionRes));
   }
+  const session = (await sessionRes.json()) as { sandbox_capabilities?: { repo_cache?: string } };
+  const expectedRepoCache = process.env.RONIN_CENTAUR_REPO_CACHE_ACCESS?.trim() || "none";
+  const repoCacheAccess = session.sandbox_capabilities?.repo_cache;
+  if (repoCacheAccess && repoCacheAccess !== expectedRepoCache) {
+    throw new CentaurError(
+      "Centaur session has an unsafe repository-cache scope.",
+      `expected ${expectedRepoCache}, received ${repoCacheAccess}`,
+    );
+  }
 
   // 2. Append user message with a unique client id.
   const idempotencyKey = input.idempotencyKey ?? crypto.randomUUID();

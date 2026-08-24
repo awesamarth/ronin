@@ -3,13 +3,17 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-export function GitHubInstallSync({ installationId }: { installationId: string | null }) {
+export function GitHubInstallSync({ installationId, verified }: { installationId: string | null; verified: boolean }) {
   const router = useRouter();
   const [status, setStatus] = useState<"idle" | "syncing" | "done" | "error">("idle");
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!installationId) return;
+    if (!verified) {
+      window.location.assign(`/api/auth/github?installation_id=${encodeURIComponent(installationId)}`);
+      return;
+    }
 
     let cancelled = false;
 
@@ -46,7 +50,7 @@ export function GitHubInstallSync({ installationId }: { installationId: string |
     return () => {
       cancelled = true;
     };
-  }, [installationId, router]);
+  }, [installationId, verified, router]);
 
   if (!installationId || status === "idle") return null;
 

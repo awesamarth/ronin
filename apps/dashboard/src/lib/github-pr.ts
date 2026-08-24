@@ -8,7 +8,7 @@ type GitHubPullRequest = {
 
 type GitHubPullRequestListItem = GitHubPullRequest;
 
-export async function openPullRequestForLatestGithubRun() {
+export async function openPullRequestForLatestGithubRun(orgId: string) {
   const run = await prisma.run.findFirst({
     include: {
       artifacts: {
@@ -23,6 +23,7 @@ export async function openPullRequestForLatestGithubRun() {
       createdAt: "desc",
     },
     where: {
+      orgId,
       kind: {
         startsWith: "github.",
       },
@@ -34,8 +35,8 @@ export async function openPullRequestForLatestGithubRun() {
   return openPullRequestForGithubRun(run.id);
 }
 
-export async function openPullRequestForGithubRun(runId: string) {
-  const run = await prisma.run.findUnique({
+export async function openPullRequestForGithubRun(runId: string, orgId?: string) {
+  const run = await prisma.run.findFirst({
     include: {
       artifacts: {
         orderBy: {
@@ -47,6 +48,7 @@ export async function openPullRequestForGithubRun(runId: string) {
     },
     where: {
       id: runId,
+      ...(orgId ? { orgId } : {}),
     },
   });
 

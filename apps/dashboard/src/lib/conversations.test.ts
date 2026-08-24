@@ -7,6 +7,7 @@ const platformTeamId = `team-${suffix}`;
 let orgId: string | undefined;
 
 afterAll(async () => {
+  if (orgId) await prisma.run.deleteMany({ where: { orgId } });
   if (orgId) await prisma.org.delete({ where: { id: orgId } }).catch(() => {});
   await prisma.conversation.deleteMany({ where: { platformTeamId } });
   await prisma.$disconnect();

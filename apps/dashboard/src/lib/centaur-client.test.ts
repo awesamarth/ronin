@@ -43,7 +43,7 @@ test("runCentaurTask posts the contract bodies with URL-encoded thread key and e
     if (String(url).includes("/events?")) {
       return new Response(sseBody, { status: 200, headers: { "content-type": "text/event-stream" } });
     }
-    return new Response("{}", { status: 200 });
+    return new Response(JSON.stringify({ sandbox_capabilities: { repo_cache: "none" } }), { status: 200 });
   }) as typeof fetch;
 
   try {
@@ -151,6 +151,20 @@ test("stream_error and terminal events are handled distinctly with bounded detai
   expect(state.terminalEvent).toBeNull();
 });
 
+test("runCentaurTask rejects a reported shared repo cache", async () => {
+  process.env.CENTAUR_API_KEY = "test-key";
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ sandbox_capabilities: { repo_cache: "all" } }), { status: 200 })) as typeof fetch;
+  try {
+    await expect(Promise.resolve(runCentaurTask({ threadKey: "ronin:unsafe", prompt: "p" }))).rejects.toThrow(
+      "unsafe repository-cache scope",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("CentaurError bounds detail and runCentaurTask falls back to random idempotency key", async () => {
   const err = new CentaurError("failed", "x".repeat(5000));
   expect(err.name).toBe("CentaurError");
@@ -165,7 +179,7 @@ test("CentaurError bounds detail and runCentaurTask falls back to random idempot
     if (String(url).endsWith("/events")) {
       throw new Error("stop here");
     }
-    return new Response("{}", { status: 200 });
+    return new Response(JSON.stringify({ sandbox_capabilities: { repo_cache: "none" } }), { status: 200 });
   }) as typeof fetch;
   try {
     await runCentaurTask({ threadKey: "ronin:x", prompt: "p" }).catch(() => {});

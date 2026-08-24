@@ -66,13 +66,25 @@ export async function getInstallationRepositories(installationId: string) {
   };
 }
 
-export async function syncGitHubInstallation(installationId: string) {
+export async function syncGitHubInstallation(installationId: string, userId: string) {
+  const verifiedAccess = await prisma.gitHubInstallationAccess.findUnique({
+    where: { userId_installationId: { userId, installationId } },
+  });
+  if (!verifiedAccess) throw new Error("GitHub installation access has not been verified for this operator.");
+
   const { repositories } = await getInstallationRepositories(installationId);
   const orgLogin = repositories[0]?.full_name.split("/")[0] ?? "unknown-github-account";
   const existingOrg =
     (await prisma.org.findUnique({ where: { githubInstallationId: installationId } })) ??
     (await prisma.org.findUnique({ where: { githubOrgLogin: orgLogin } })) ??
     (await prisma.org.findUnique({ where: { slug: orgLogin.toLowerCase() } }));
+  if (existingOrg) {
+    const membership = await prisma.orgMembership.findUnique({ where: { orgId_userId: { orgId: existingOrg.id, userId } } });
+    const hasMembers = (await prisma.orgMembership.count({ where: { orgId: existingOrg.id } })) > 0;
+    if (hasMembers && (!membership || membership.status !== "active" || (membership.role !== "owner" && membership.role !== "admin"))) {
+      throw new Error("Organization administrator permission is required to sync this existing installation.");
+    }
+  }
   const org = existingOrg
     ? await prisma.org.update({
         where: { id: existingOrg.id },
@@ -91,6 +103,17 @@ export async function syncGitHubInstallation(installationId: string) {
           slug: orgLogin.toLowerCase(),
         },
       });
+
+  const existingMembership = await prisma.orgMembership.findUnique({ where: { orgId_userId: { orgId: org.id, userId } } });
+  if (!existingMembership) {
+    const membershipCount = await prisma.orgMembership.count({ where: { orgId: org.id, status: "active" } });
+    await prisma.orgMembership.upsert({
+      where: { orgId_userId: { orgId: org.id, userId } },
+      create: { orgId: org.id, userId, role: membershipCount === 0 ? "owner" : "member" },
+      update: {},
+    });
+  }
+  await prisma.user.update({ where: { id: userId }, data: { lastActiveOrgId: org.id } });
 
   const onboardingRunIds: string[] = [];
 

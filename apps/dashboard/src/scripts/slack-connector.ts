@@ -1,6 +1,7 @@
 import "dotenv/config";
 
 import { App } from "@slack/bolt";
+import { authorizeSlackActor } from "../lib/authorization";
 import { recordInboundMessage, recordOutboundMessage } from "../lib/conversations";
 import { ensureSlackInstallation, HostedInferenceLimitError } from "../lib/hosted-inference";
 import { DuplicateMessageDelivery, ingestSupportMessage } from "../lib/message-ingest";
@@ -63,7 +64,17 @@ async function handleSlackMessage(input: {
       const externalMessageId = event.ts ?? crypto.randomUUID();
       const threadId = event.thread_ts ?? externalMessageId;
       if (installation.orgId) {
-        const userName = await getUserName(client, event.user);
+        const profile = await getUserProfile(client, event.user);
+        const actor = await authorizeSlackActor({
+          orgId: installation.orgId,
+          appTeamId: teamId,
+          userId: event.user,
+          profileTeamId: profile.teamId,
+          displayName: profile.name,
+          avatarUrl: profile.avatarUrl,
+          isGuest: profile.isGuest,
+          accessMode: "internal",
+        });
         const result = await ingestOrgRoninMessage({
           orgId: installation.orgId,
           teamId,
@@ -71,7 +82,9 @@ async function handleSlackMessage(input: {
           threadId,
           messageId: externalMessageId,
           userId: event.user,
-          userName,
+          userName: profile.name,
+          actorUserId: actor.userId,
+          authorization: { role: actor.role, permission: actor.permission },
           text: event.text,
         });
         const reply = withSlackExecutionFooter(result.reply, result.config);
@@ -122,10 +135,26 @@ async function handleSlackMessage(input: {
       return;
     }
 
-    const [channelName, userName] = await Promise.all([
+    const [channelName, profile, channel] = await Promise.all([
       getChannelName(client, event.channel),
-      getUserName(client, event.user),
+      getUserProfile(client, event.user),
+      prisma.channel.findUnique({
+        where: { platform_platformTeamId_platformChannelId: { platform: "slack", platformTeamId: teamId, platformChannelId: event.channel } },
+        select: { orgId: true, accessMode: true },
+      }),
     ]);
+    if (!channel) throw new Error("No Ronin channel mapping exists for this Slack channel.");
+    const accessMode = channel.accessMode === "external" ? "external" : "internal";
+    const actor = await authorizeSlackActor({
+      orgId: channel.orgId,
+      appTeamId: teamId,
+      userId: event.user,
+      profileTeamId: profile.teamId,
+      displayName: profile.name,
+      avatarUrl: profile.avatarUrl,
+      isGuest: profile.isGuest,
+      accessMode,
+    });
 
     const result = await ingestSupportMessage({
       platform: "slack",
@@ -133,7 +162,10 @@ async function handleSlackMessage(input: {
       channelId: event.channel,
       channelName,
       userId: event.user,
-      userName,
+      userName: profile.name,
+      actorUserId: actor.userId,
+      authorizedAction: accessMode === "external" ? "support.external" : "support.internal",
+      authorization: { role: actor.role, permission: actor.permission },
       messageId: event.ts,
       threadId: event.thread_ts ?? event.ts,
       text: stripBotMention(event.text),
@@ -219,13 +251,18 @@ async function getChannelName(client: App["client"], channel: string) {
   }
 }
 
-async function getUserName(client: App["client"], user: string) {
+async function getUserProfile(client: App["client"], user: string) {
   try {
     const response = await client.users.info({ user });
     const profile = response.user?.profile;
-    return profile?.display_name || profile?.real_name || response.user?.name || user;
+    return {
+      name: profile?.display_name || profile?.real_name || response.user?.name || user,
+      avatarUrl: profile?.image_192,
+      teamId: response.user?.team_id,
+      isGuest: Boolean(response.user?.is_restricted || response.user?.is_ultra_restricted || response.user?.is_stranger),
+    };
   } catch {
-    return user;
+    return { name: user, avatarUrl: undefined, teamId: undefined, isGuest: true };
   }
 }
 
