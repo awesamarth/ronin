@@ -54,6 +54,7 @@ bun run --cwd apps/dashboard telegram:connector
 - Slack and Telegram message routing lives in `apps/dashboard/src/lib/message-ingest.ts`.
 - Dashboard data loading lives in `apps/dashboard/src/lib/dashboard-data.ts`.
 - Prisma schema lives in `apps/dashboard/prisma/schema.prisma`.
+- `Conversation` and `ConversationMessage` own platform-thread continuity. `Run` is one logical Ronin job; `AgentExecution` is one idempotent Centaur invocation within that job; `Artifact` is durable output. Do not collapse these responsibilities back together.
 
 ## Product Behavior To Preserve
 
@@ -76,6 +77,7 @@ The dashboard is an operator console, not a marketing landing page.
 
 ## TODO
 
+- Add a persistent `WorkItem` only when Ronin implements an actionable multi-step lifecycle spanning conversations, runs, review, and resolution; do not use `Run` as that lifecycle object.
 - Add authorized Slack thread commands for inspecting and overriding harness, model, provider, and reasoning (`/ronin settings`, `/ronin model`, `/ronin reasoning`, `/ronin reset`). Public/external users must remain on operator-controlled defaults.
 - Deferred: add organization memberships and roles before internal and external users can share channels or repository context. For now, assume external users and employees use separate Slack channels.
 - Replace manual DM channel-ID mappings with an authorized onboarding and repository-selection flow.

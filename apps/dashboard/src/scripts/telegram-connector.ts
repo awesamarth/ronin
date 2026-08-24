@@ -1,6 +1,7 @@
 import "dotenv/config";
 
-import { ingestSupportMessage } from "../lib/message-ingest";
+import { recordOutboundMessage } from "../lib/conversations";
+import { DuplicateMessageDelivery, ingestSupportMessage } from "../lib/message-ingest";
 import { prisma } from "../lib/prisma";
 
 type TelegramUser = {
@@ -117,17 +118,34 @@ async function handleUpdate(update: TelegramUpdate) {
       channelName: chatName,
       platform: "telegram",
       platformTeamId: botUsername ?? "",
+      messageId: String(message.message_id),
+      threadId: chatContextId,
       text: parsedText,
       userId,
       userName,
     });
 
-    await telegramApi("sendMessage", {
+    const sent = await telegramApi<TelegramMessage>("sendMessage", {
       chat_id: message.chat.id,
       message_thread_id: message.message_thread_id,
       reply_to_message_id: message.message_id,
       text: result.reply,
     });
+    try {
+      await recordOutboundMessage({
+        conversationId: result.conversationId,
+        externalMessageId: String(sent.result.message_id),
+        content: result.reply,
+      });
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          chatId: chatContextId,
+          event: "telegram.reply_persistence_failed",
+          error: error instanceof Error ? error.message : "Telegram reply persistence failed.",
+        }),
+      );
+    }
 
     console.log(
       JSON.stringify({
@@ -139,6 +157,10 @@ async function handleUpdate(update: TelegramUpdate) {
       }),
     );
   } catch (error) {
+    if (error instanceof DuplicateMessageDelivery) {
+      console.log(JSON.stringify({ chatId: chatContextId, event: "telegram.duplicate_ignored" }));
+      return;
+    }
     const text = error instanceof Error ? error.message : "Ronin Telegram connector failed.";
     console.error(JSON.stringify({ chatId: chatContextId, error: text, event: "telegram.support_failed" }));
     await telegramApi("sendMessage", {

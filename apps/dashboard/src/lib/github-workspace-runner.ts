@@ -1,5 +1,5 @@
-import { runCentaurTask, buildThreadKey, type CentaurExecutionConfig, type CentaurResult } from "./centaur-client";
-import { prisma } from "./prisma";
+import { buildThreadKey, type CentaurExecutionConfig, type CentaurResult } from "./centaur-client";
+import { runTrackedCentaurTask } from "./tracked-centaur";
 
 export type WorkspaceRunInput = {
   afterSha?: string;
@@ -59,17 +59,14 @@ const REQUIRED_FIELDS: Array<keyof WorkspaceReport> = [
 export async function runGithubWorkspaceMaintenance(input: WorkspaceRunInput): Promise<WorkspaceRunResult> {
   const branch = `ronin/patch-${input.runId.replace(/[^a-zA-Z0-9-]/g, "-").slice(0, 40)}`;
   const threadKey = buildThreadKey(["workspace", input.repo, input.runId]);
-  const result = await runCentaurTask({
+  const result = await runTrackedCentaurTask({
+    runId: input.runId,
+    purpose: "workspace",
     threadKey,
     prompt: buildWorkspacePrompt({ input, branch }),
     timeoutMs: Number(process.env.RONIN_WORKSPACE_TIMEOUT_MS ?? 600_000),
     idempotencyKey: `${input.runId}:workspace`,
     config: input.executionConfig,
-    onExecutionStarted: ({ executionId, threadKey: startedThreadKey }) =>
-      prisma.run.update({
-        where: { id: input.runId },
-        data: { centaurExecutionId: executionId, centaurThreadKey: startedThreadKey },
-      }),
   });
 
   const report = parseWorkspaceReport(result.rawOutput);

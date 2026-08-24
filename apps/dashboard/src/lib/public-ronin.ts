@@ -21,13 +21,12 @@ ${message.trim()}`;
 
 export async function answerPublicRoninMessage(input: {
   message: string;
-  teamId: string;
-  channelId: string;
+  conversationId: string;
   eventId: string;
 }) {
   const result = await runCentaurTask({
-    threadKey: buildThreadKey(["public", "slack", input.teamId, input.channelId]),
-    idempotencyKey: `public-slack-${input.teamId}-${input.channelId}-${input.eventId}`,
+    threadKey: buildThreadKey(["public", input.conversationId]),
+    idempotencyKey: `public-${input.conversationId}-${input.eventId}`,
     prompt: buildPublicRoninPrompt(input.message),
   });
   return { reply: result.rawOutput, config: result.config };

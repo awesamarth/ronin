@@ -1,5 +1,7 @@
 import { prisma } from "./prisma";
-import { runCentaurTask, buildThreadKey } from "./centaur-client";
+import { buildThreadKey } from "./centaur-client";
+import { recordInboundMessage } from "./conversations";
+import { runTrackedCentaurTask } from "./tracked-centaur";
 import { openPullRequestForGithubRun } from "./github-pr";
 import { runGithubWorkspaceMaintenance } from "./github-workspace-runner";
 
@@ -10,13 +12,34 @@ export type MessageIngestInput = {
   channelName?: string;
   userId: string;
   userName?: string;
+  messageId?: string;
+  threadId?: string;
   text: string;
 };
+
+export class DuplicateMessageDelivery extends Error {}
 
 export async function ingestSupportMessage(input: MessageIngestInput) {
   const channel = await resolveChannelContext(input);
   const repo = channel.defaultRepo ?? (await getPrimaryRepository(channel.orgId));
   if (!repo) throw new Error(`No watched repository is configured for ${input.platform}:${input.channelId}.`);
+
+  const externalMessageId = input.messageId ?? crypto.randomUUID();
+  const { conversation, message } = await recordInboundMessage({
+    platform: input.platform,
+    platformTeamId: input.platformTeamId,
+    platformChannelId: input.channelId,
+    platformThreadId: input.threadId ?? externalMessageId,
+    externalMessageId,
+    content: input.text,
+    actorId: input.userId,
+    actorName: input.userName,
+    orgId: channel.orgId,
+    channelId: channel.id,
+  });
+  if (await prisma.run.findUnique({ where: { sourceMessageId: message.id }, select: { id: true } })) {
+    throw new DuplicateMessageDelivery(`Message ${externalMessageId} was already processed.`);
+  }
 
   const latestRun = await prisma.run.findFirst({
     include: {
@@ -27,29 +50,37 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
     },
     orderBy: { createdAt: "desc" },
     where: {
+      conversationId: conversation.id,
       orgId: channel.orgId,
       repoId: repo.id,
     },
   });
-  const recentArtifacts = await prisma.artifact.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 8,
-    where: {
-      orgId: channel.orgId,
-      repoId: repo.id,
-    },
-  });
+  const [recentArtifacts, priorMessages] = await Promise.all([
+    prisma.artifact.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 8,
+      where: {
+        orgId: channel.orgId,
+        repoId: repo.id,
+        OR: [{ kind: { not: "support_answer" } }, { run: { conversationId: conversation.id } }],
+      },
+    }),
+    prisma.conversationMessage
+      .findMany({
+        orderBy: { createdAt: "desc" },
+        take: 12,
+        where: { conversationId: conversation.id, id: { not: message.id } },
+      })
+      .then((messages) => messages.reverse()),
+  ]);
 
-  const run = await prisma.run.create({
-    data: {
-      id: `message-${crypto.randomUUID()}`,
-      orgId: channel.orgId,
-      repoId: repo.id,
-      kind: "message.support_answer",
-      status: "running",
-      input: JSON.stringify(input),
-      summary: `Support message from ${input.platform}:${input.channelId}`,
-    },
+  const run = await createMessageRun({
+    channelId: input.channelId,
+    conversationId: conversation.id,
+    input,
+    orgId: channel.orgId,
+    repoId: repo.id,
+    sourceMessageId: message.id,
   });
 
   try {
@@ -199,6 +230,7 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
         prUrl,
         reply: actionReply,
         runId: run.id,
+        conversationId: conversation.id,
         runnerBackend: workspaceResult.runnerBackend,
         executionConfig: workspaceResult.executionConfig,
       };
@@ -215,9 +247,11 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
       });
     }
 
-    const agent = await runCentaurTask({
-      threadKey: buildThreadKey(["support", repo.fullName, run.id]),
-      prompt: buildSupportPrompt({ artifacts: recentArtifacts, input, latestRun, repoName: repo.fullName, repoUrl }),
+    const agent = await runTrackedCentaurTask({
+      runId: run.id,
+      purpose: "support",
+      threadKey: buildThreadKey(["support", repo.fullName, conversation.id]),
+      prompt: buildSupportPrompt({ artifacts: recentArtifacts, input, latestRun, messages: priorMessages, repoName: repo.fullName, repoUrl }),
       idempotencyKey: `${run.id}:support`,
       config: {
         harness: repo.harnessType,
@@ -225,11 +259,6 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
         provider: repo.provider,
         reasoning: repo.reasoning,
       },
-      onExecutionStarted: ({ executionId, threadKey }) =>
-        prisma.run.update({
-          where: { id: run.id },
-          data: { centaurExecutionId: executionId, centaurThreadKey: threadKey },
-        }),
     });
     const parsed = parseAgentJson(agent.rawOutput);
     const reply = stringOrFallback(parsed.reply, agent.rawOutput);
@@ -308,6 +337,7 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
       needsDocsUpdate,
       intent,
       runId: run.id,
+      conversationId: conversation.id,
       runnerBackend: agent.backend,
       executionConfig: agent.config,
     };
@@ -321,6 +351,36 @@ export async function ingestSupportMessage(input: MessageIngestInput) {
         completedAt: new Date(),
       },
     });
+    throw error;
+  }
+}
+
+async function createMessageRun(input: {
+  channelId: string;
+  conversationId: string;
+  input: MessageIngestInput;
+  orgId: string;
+  repoId: string;
+  sourceMessageId: string;
+}) {
+  try {
+    return await prisma.run.create({
+      data: {
+        id: `message-${crypto.randomUUID()}`,
+        orgId: input.orgId,
+        repoId: input.repoId,
+        conversationId: input.conversationId,
+        sourceMessageId: input.sourceMessageId,
+        kind: "message.support_answer",
+        status: "running",
+        input: JSON.stringify(input.input),
+        summary: `Support message from ${input.input.platform}:${input.channelId}`,
+      },
+    });
+  } catch (error) {
+    if (typeof error === "object" && error && "code" in error && error.code === "P2002") {
+      throw new DuplicateMessageDelivery(`Message ${input.input.messageId ?? input.sourceMessageId} was already processed.`);
+    }
     throw error;
   }
 }
@@ -378,14 +438,15 @@ function buildSupportPrompt(input: {
     summary: string | null;
     artifacts: Array<{ kind: string; title: string; content: string }>;
   } | null;
+  messages: Array<{ role: string; actorName: string | null; content: string }>;
   repoName: string;
   repoUrl: string;
 }) {
   const latestKnownIssues = input.latestRun?.artifacts.find((artifact) => artifact.kind === "known_issues_update")?.content;
   const latestSupportSeed = input.latestRun?.artifacts.find((artifact) => artifact.kind === "support_answer")?.content;
 
-  return `You are Ronin, an agentic solutions engineer for a protocol/SDK team.
-You are handling an external builder message in a support channel.
+  return `You are Ronin, an agentic solutions engineer for a product team.
+You are handling a message in a connected team or support channel.
 Ronin has already resolved the tenant/channel/repo context. Do not ask the user which repo this is about.
 If the user is asking a question, give a direct, useful answer grounded in the configured repo and Ronin artifacts.
 If the user is asking Ronin to change code/docs/tests/config/examples and open a PR, set intent to "workspace_change" and summarize the requested change in actionRequest.
@@ -400,7 +461,10 @@ User: ${input.input.userName ?? input.input.userId}
 Repo: ${input.repoName}
 Repo URL: ${input.repoUrl}
 
-Builder message:
+Conversation history:
+${input.messages.length ? input.messages.map((message) => `${message.role === "assistant" ? "Ronin" : message.actorName ?? "User"}: ${message.content.slice(0, 2000)}`).join("\n") : "No earlier messages in this conversation."}
+
+Current message:
 ${input.input.text}
 
 Latest ingest summary:
@@ -419,7 +483,7 @@ Return JSON:
 {
   "intent": "answer or workspace_change",
   "summary": "short internal summary",
-  "reply": "message to send back to the builder",
+  "reply": "message to send back to the requester",
   "actionRequest": "if intent is workspace_change, the concrete repo change Ronin should make",
   "needsDocsUpdate": true
 }`;

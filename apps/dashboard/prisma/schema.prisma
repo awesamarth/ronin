@@ -17,12 +17,14 @@ model Org {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
-  repos        Repository[]
-  channels     Channel[]
-  runs         Run[]
-  artifacts    Artifact[]
-  githubEvents GitHubEvent[]
-  auditLogs    AuditLog[]
+  repos         Repository[]
+  channels      Channel[]
+  conversations Conversation[]
+  runs          Run[]
+  executions    AgentExecution[]
+  artifacts     Artifact[]
+  githubEvents  GitHubEvent[]
+  auditLogs     AuditLog[]
 }
 
 model Repository {
@@ -64,17 +66,59 @@ model Channel {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  org         Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  defaultRepo Repository? @relation(fields: [defaultRepoId], references: [id], onDelete: SetNull)
+  org           Org            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  defaultRepo   Repository?    @relation(fields: [defaultRepoId], references: [id], onDelete: SetNull)
+  conversations Conversation[]
 
   @@unique([platform, platformTeamId, platformChannelId])
   @@index([orgId])
+}
+
+model Conversation {
+  id                String   @id @default(cuid())
+  orgId             String?
+  channelId         String?
+  scope             String
+  platform          String
+  platformTeamId    String
+  platformChannelId String
+  platformThreadId  String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  org      Org?                  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  channel  Channel?              @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  messages ConversationMessage[]
+  runs     Run[]
+
+  @@unique([platform, platformTeamId, platformChannelId, platformThreadId], map: "Conversation_external_identity_key")
+  @@index([orgId, updatedAt])
+  @@index([channelId])
+}
+
+model ConversationMessage {
+  id                String   @id @default(cuid())
+  conversationId    String
+  externalMessageId String
+  role              String
+  actorId           String?
+  actorName         String?
+  content           String
+  createdAt         DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sourceRun    Run?         @relation("RunSourceMessage")
+
+  @@unique([conversationId, externalMessageId])
+  @@index([conversationId, createdAt])
 }
 
 model Run {
   id                 String    @id
   orgId              String
   repoId             String?
+  conversationId     String?
+  sourceMessageId    String?   @unique
   kind               String
   status             String
   summary            String?
@@ -88,13 +132,46 @@ model Run {
   completedAt        DateTime?
   attempt            Int       @default(0)
 
-  org       Org         @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  repo      Repository? @relation(fields: [repoId], references: [id], onDelete: SetNull)
-  artifacts Artifact[]
-  auditLogs AuditLog[]
+  org           Org                  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  repo          Repository?          @relation(fields: [repoId], references: [id], onDelete: SetNull)
+  conversation  Conversation?        @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  sourceMessage ConversationMessage? @relation("RunSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
+  executions    AgentExecution[]
+  artifacts     Artifact[]
+  auditLogs     AuditLog[]
 
   @@index([orgId, kind, createdAt])
   @@index([repoId])
+  @@index([conversationId, createdAt])
+}
+
+model AgentExecution {
+  id                 String    @id @default(cuid())
+  orgId              String
+  runId              String
+  purpose            String
+  idempotencyKey     String
+  status             String
+  backend            String?
+  centaurThreadKey   String?
+  centaurExecutionId String?
+  harness            String?
+  model              String?
+  provider           String?
+  reasoning          String?
+  output             String?
+  error              String?
+  startedAt          DateTime?
+  completedAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  org Org @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, idempotencyKey])
+  @@index([orgId, createdAt])
+  @@index([centaurExecutionId])
 }
 
 model Artifact {

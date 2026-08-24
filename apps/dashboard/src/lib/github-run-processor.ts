@@ -1,6 +1,7 @@
 import { prisma } from "./prisma";
 import { createInstallationToken } from "./github-app";
-import { runCentaurTask, buildThreadKey } from "./centaur-client";
+import { buildThreadKey } from "./centaur-client";
+import { runTrackedCentaurTask } from "./tracked-centaur";
 import { openPullRequestForGithubRun } from "./github-pr";
 import { runGithubWorkspaceMaintenance } from "./github-workspace-runner";
 
@@ -119,7 +120,9 @@ async function processClaimedGithubRun(runId: string) {
       repo: run.repo.fullName,
       summary: run.summary,
     });
-    const agent = await runCentaurTask({
+    const agent = await runTrackedCentaurTask({
+      runId: run.id,
+      purpose: "analyze",
       threadKey: buildThreadKey(["run", run.repo.fullName, run.id]),
       prompt,
       idempotencyKey: `${run.id}:analyze`,
@@ -129,11 +132,6 @@ async function processClaimedGithubRun(runId: string) {
         provider: run.repo.provider,
         reasoning: run.repo.reasoning,
       },
-      onExecutionStarted: ({ executionId, threadKey }) =>
-        prisma.run.update({
-          where: { id: run.id },
-          data: { centaurExecutionId: executionId, centaurThreadKey: threadKey },
-        }),
     });
     const parsed = parseAgentJson(agent.rawOutput);
     const artifacts = {

@@ -1,7 +1,8 @@
 import "dotenv/config";
 
 import { App } from "@slack/bolt";
-import { ingestSupportMessage } from "../lib/message-ingest";
+import { recordInboundMessage, recordOutboundMessage } from "../lib/conversations";
+import { DuplicateMessageDelivery, ingestSupportMessage } from "../lib/message-ingest";
 import { prisma } from "../lib/prisma";
 import { answerPublicRoninMessage } from "../lib/public-ronin";
 import { withSlackExecutionFooter } from "../lib/slack-execution-footer";
@@ -51,16 +52,36 @@ async function handleSlackMessage(input: { client: App["client"]; event: SlackMe
 
   try {
     if (mode === "dm" && !(await isMappedChannel(teamId, event.channel))) {
+      const externalMessageId = event.ts ?? crypto.randomUUID();
+      const { conversation, isNew } = await recordInboundMessage({
+        platform: "slack",
+        platformTeamId: teamId,
+        platformChannelId: event.channel,
+        platformThreadId: event.thread_ts ?? externalMessageId,
+        externalMessageId,
+        content: event.text,
+        actorId: event.user,
+      });
+      if (!isNew) {
+        console.log(JSON.stringify({ event: "slack.duplicate_ignored", channelId: event.channel }));
+        return;
+      }
       const result = await answerPublicRoninMessage({
         message: event.text,
-        teamId,
-        channelId: event.channel,
-        eventId: event.ts ?? event.thread_ts ?? crypto.randomUUID(),
+        conversationId: conversation.id,
+        eventId: externalMessageId,
       });
-      await client.chat.postMessage({
+      const reply = withSlackExecutionFooter(result.reply, result.config);
+      const posted = await client.chat.postMessage({
         channel: event.channel,
-        text: withSlackExecutionFooter(result.reply, result.config),
+        text: reply,
         thread_ts: event.thread_ts ?? event.ts,
+      });
+      await persistOutboundMessage({
+        conversationId: conversation.id,
+        externalMessageId: posted.ts ?? `ronin:${externalMessageId}`,
+        content: reply,
+        channelId: event.channel,
       });
       console.log(JSON.stringify({ event: "slack.public_answered", teamId, channelId: event.channel }));
       return;
@@ -78,13 +99,22 @@ async function handleSlackMessage(input: { client: App["client"]; event: SlackMe
       channelName,
       userId: event.user,
       userName,
+      messageId: event.ts,
+      threadId: event.thread_ts ?? event.ts,
       text: stripBotMention(event.text),
     });
 
-    await client.chat.postMessage({
+    const reply = withSlackExecutionFooter(result.reply, result.executionConfig);
+    const posted = await client.chat.postMessage({
       channel: event.channel,
-      text: withSlackExecutionFooter(result.reply, result.executionConfig),
+      text: reply,
       thread_ts: event.thread_ts ?? event.ts,
+    });
+    await persistOutboundMessage({
+      conversationId: result.conversationId,
+      externalMessageId: posted.ts ?? `ronin:${result.runId}`,
+      content: reply,
+      channelId: event.channel,
     });
 
     console.log(
@@ -99,6 +129,10 @@ async function handleSlackMessage(input: { client: App["client"]; event: SlackMe
       }),
     );
   } catch (error) {
+    if (error instanceof DuplicateMessageDelivery) {
+      console.log(JSON.stringify({ event: "slack.duplicate_ignored", channelId: event.channel }));
+      return;
+    }
     const message = error instanceof Error ? error.message : "Ronin Slack connector failed.";
     console.error(JSON.stringify({ event: "slack.support_failed", channelId: event.channel, error: message }));
     await client.chat.postMessage({
@@ -111,6 +145,25 @@ async function handleSlackMessage(input: { client: App["client"]; event: SlackMe
 
 function stripBotMention(text: string) {
   return text.replace(/<@[A-Z0-9]+>/g, "").trim();
+}
+
+async function persistOutboundMessage(input: {
+  conversationId: string;
+  externalMessageId: string;
+  content: string;
+  channelId: string;
+}) {
+  try {
+    await recordOutboundMessage(input);
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        event: "slack.reply_persistence_failed",
+        channelId: input.channelId,
+        error: error instanceof Error ? error.message : "Slack reply persistence failed.",
+      }),
+    );
+  }
 }
 
 async function isMappedChannel(teamId: string, channelId: string) {
