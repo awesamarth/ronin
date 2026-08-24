@@ -89,7 +89,7 @@ The dashboard is an operator console, not a marketing landing page.
 - Replace manual DM channel-ID mappings with an authorized onboarding and repository-selection flow.
 - Replace the single-workspace Slack bot-token setup with Slack OAuth installations and encrypted per-workspace bot credentials for production multi-workspace SaaS.
 - Add organization-level hosted inference billing and BYOK, followed by compatible BYOM endpoints when customers require them.
-- Add a least-privilege renewable Ronin-to-Centaur service credential instead of Console/admin-capable temporary credentials; tenant authorization remains in Ronin and per-session sandbox scope.
+- Replace the local demo's non-expiring static Centaur admin credential with a least-privilege `ronin:` service identity before production; tenant authorization remains in Ronin and per-session sandbox scope.
 - Broker narrowly scoped GitHub write credentials to Centaur for authorized branch pushes without exposing GitHub App installation tokens.
 - Finish hosted operations: production OAuth callback, TLS proxy, database backups/restores, process supervision, monitoring, and log collection.
 - Validate Telegram live without contacting existing users unexpectedly.

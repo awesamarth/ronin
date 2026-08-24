@@ -153,7 +153,7 @@ The current build is real for:
 - PostgreSQL-enforced hosted inference quotas per Slack user and workspace.
 - Slack action requests opening code/docs PRs.
 
-The dashboard now requires PostgreSQL and GitHub OAuth; an optional allowlist can gate private-beta admission. GitHub work is atomically claimed by the worker and safely retried through Centaur idempotency. Deployment still needs hosted process supervision, a public webhook URL, forced PostgreSQL RLS with split tenant/system roles, and a least-privilege renewable Ronin-to-Centaur credential instead of the temporary Console credential.
+The dashboard now requires PostgreSQL and GitHub OAuth; an optional allowlist can gate private-beta admission. GitHub work is atomically claimed by the worker and safely retried through Centaur idempotency. The local demo uses Centaur's non-expiring static admin credential, stored only in Kubernetes and the ignored dashboard environment file. Production still needs hosted process supervision, a public webhook URL, forced PostgreSQL RLS with split tenant/system roles, and a least-privilege Ronin-to-Centaur credential.
 
 ## Positioning
 
