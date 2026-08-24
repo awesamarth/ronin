@@ -74,7 +74,13 @@ bun run lint
 bun run build
 ```
 
-Run the dashboard:
+Restore the existing local demo after a reboot (Docker, Kind, Centaur port-forward, dashboard, and Slack connector):
+
+```bash
+bun run demo:start
+```
+
+Run only the dashboard:
 
 ```bash
 bun run dev:dashboard
