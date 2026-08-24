@@ -81,6 +81,7 @@ The dashboard is an operator console, not a marketing landing page.
 - Add authorized Slack thread commands for inspecting and overriding harness, model, provider, and reasoning (`/ronin settings`, `/ronin model`, `/ronin reasoning`, `/ronin reset`). Public/external users must remain on operator-controlled defaults.
 - Deferred: add organization memberships and roles before internal and external users can share channels or repository context. For now, assume external users and employees use separate Slack channels.
 - Replace manual DM channel-ID mappings with an authorized onboarding and repository-selection flow.
+- Replace the single-workspace Slack bot-token setup with Slack OAuth installations and encrypted per-workspace bot credentials for production multi-workspace SaaS.
 - Add organization-level hosted inference billing and BYOK, followed by compatible BYOM endpoints when customers require them.
 - Add a scoped `ronin:` Centaur service identity and renewable authentication instead of Console/admin-capable temporary credentials.
 - Broker narrowly scoped GitHub write credentials to Centaur for authorized branch pushes without exposing GitHub App installation tokens.
