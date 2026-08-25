@@ -17,11 +17,23 @@ if ! docker info >/dev/null 2>&1; then
 fi
 docker info >/dev/null 2>&1 || { echo "Docker Desktop did not become ready." >&2; exit 1; }
 
-# ponytail: this restores the existing local demo; rerun deployment if its containers were deleted.
-for container in ronin-postgres centaur-control-plane; do
-  docker inspect "$container" >/dev/null 2>&1 || { echo "Missing container: $container" >&2; exit 1; }
-  [ "$(docker inspect -f '{{.State.Running}}' "$container")" = true ] || docker start "$container" >/dev/null
-done
+if ! docker inspect ronin-postgres >/dev/null 2>&1; then
+  docker volume inspect ronin-demo-postgres-data >/dev/null 2>&1 || {
+    echo "Missing Ronin PostgreSQL data volume." >&2
+    exit 1
+  }
+  docker run -d --name ronin-postgres --restart unless-stopped \
+    -e POSTGRES_DB=ronin -e POSTGRES_USER=ronin -e POSTGRES_PASSWORD=ronin \
+    -p 127.0.0.1:54329:5432 -v ronin-demo-postgres-data:/var/lib/postgresql/data \
+    postgres:17-alpine >/dev/null
+fi
+[ "$(docker inspect -f '{{.State.Running}}' ronin-postgres)" = true ] || docker start ronin-postgres >/dev/null
+
+docker inspect centaur-control-plane >/dev/null 2>&1 || {
+  echo "Missing Centaur Kind cluster; rerun its local deployment." >&2
+  exit 1
+}
+[ "$(docker inspect -f '{{.State.Running}}' centaur-control-plane)" = true ] || docker start centaur-control-plane >/dev/null
 
 for _ in {1..60}; do
   kubectl --context kind-centaur get nodes >/dev/null 2>&1 && break
