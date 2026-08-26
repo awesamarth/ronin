@@ -72,7 +72,12 @@ export async function openPullRequestForGithubRun(runId: string, orgId?: string)
   const installationId = input.installationId ?? run.org.githubInstallationId ?? process.env.GITHUB_INSTALLATION_ID;
   if (!installationId) throw new Error("GitHub installation id is not configured for this run.");
 
-  const token = (await createInstallationToken(installationId)).token;
+  const githubRepoId = Number(run.repo.githubRepoId);
+  if (!Number.isSafeInteger(githubRepoId) || githubRepoId <= 0) throw new Error(`Repository ${run.repo.fullName} has no valid GitHub repository id.`);
+  const token = (await createInstallationToken(installationId, {
+    repositoryIds: [githubRepoId],
+    permissions: { contents: "read", pull_requests: "write" },
+  })).token;
   const baseBranch = run.repo.defaultBranch || "main";
   const workspacePatch = parseWorkspacePatch(run.artifacts.find((artifact) => artifact.kind === "github_workspace_patch")?.content);
   if (workspacePatch?.pushed) {

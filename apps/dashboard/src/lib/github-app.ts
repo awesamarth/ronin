@@ -20,15 +20,23 @@ export function createGitHubAppJwt() {
   return `${signingInput}.${signature}`;
 }
 
-export async function createInstallationToken(installationId: string) {
+export async function createInstallationToken(
+  installationId: string,
+  scope?: {
+    repositoryIds: number[];
+    permissions: Partial<Record<"contents" | "pull_requests", "read" | "write">>;
+  },
+) {
   const jwt = createGitHubAppJwt();
   const response = await fetch(`https://api.github.com/app/installations/${installationId}/access_tokens`, {
     method: "POST",
     headers: {
       accept: "application/vnd.github+json",
       authorization: `Bearer ${jwt}`,
+      "content-type": "application/json",
       "x-github-api-version": "2022-11-28",
     },
+    body: scope ? JSON.stringify({ repository_ids: scope.repositoryIds, permissions: scope.permissions }) : undefined,
     signal: AbortSignal.timeout(30_000),
   });
 

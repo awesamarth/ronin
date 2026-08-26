@@ -56,6 +56,14 @@ for _ in {1..30}; do
 done
 curl -fsS http://127.0.0.1:18080/healthz >/dev/null
 
+start_tmux centaur-control-forward "$ROOT" \
+  "exec kubectl --context kind-centaur -n centaur port-forward service/centaur-centaur-console 18081:3000 2>&1 | tee /tmp/centaur-control-forward.log"
+for _ in {1..30}; do
+  curl -fsS http://127.0.0.1:18081/up >/dev/null 2>&1 && break
+  sleep 1
+done
+curl -fsS http://127.0.0.1:18081/up >/dev/null
+
 tmux kill-session -t ronin-dashboard 2>/dev/null || true
 DATABASE_URL=postgresql://ronin:ronin@127.0.0.1:54329/ronin \
   bun run build:dashboard >/tmp/ronin-dashboard-build.log 2>&1

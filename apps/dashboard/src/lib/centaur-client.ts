@@ -77,6 +77,11 @@ export async function runCentaurTask(input: {
   timeoutMs?: number;
   idempotencyKey?: string;
   config?: CentaurExecutionConfig;
+  prepareSession?: (session: {
+    principalId: string | null;
+    sandboxReady: boolean;
+    threadKey: string;
+  }) => Promise<undefined | (() => Promise<void>)>;
   onExecutionStarted?: (execution: { threadKey: string; executionId: string }) => unknown | Promise<unknown>;
 }): Promise<CentaurResult> {
   if (!CENTAUR_API_KEY()) throw new Error("CENTAUR_API_KEY is required.");
@@ -106,7 +111,11 @@ export async function runCentaurTask(input: {
   if (!sessionRes.ok) {
     throw new CentaurError(`Session create failed: ${sessionRes.status}`, await safeText(sessionRes));
   }
-  const session = (await sessionRes.json()) as { sandbox_capabilities?: { repo_cache?: string } };
+  const session = (await sessionRes.json()) as {
+    iron_control_principal?: string | null;
+    sandbox_id?: string | null;
+    sandbox_capabilities?: { repo_cache?: string };
+  };
   const expectedRepoCache = process.env.RONIN_CENTAUR_REPO_CACHE_ACCESS?.trim() || "none";
   const repoCacheAccess = session.sandbox_capabilities?.repo_cache;
   if (repoCacheAccess && repoCacheAccess !== expectedRepoCache) {
@@ -116,53 +125,63 @@ export async function runCentaurTask(input: {
     );
   }
 
-  // 2. Append user message with a unique client id.
-  const idempotencyKey = input.idempotencyKey ?? crypto.randomUUID();
-  const clientId = stableClientMessageId(idempotencyKey);
-  const messageRes = await fetch(`${baseUrl}/api/session/${encodedKey}/messages`, {
-    method: "POST",
-    headers: centaurHeaders(),
-    body: JSON.stringify({
-      messages: [
-        {
-          client_message_id: clientId,
-          role: "user",
-          parts: [{ type: "text", text: input.prompt }],
-          metadata: { source: "ronin" },
-        },
-      ],
-    }),
-    signal: controller.signal,
-  });
-  if (!messageRes.ok) {
-    throw new CentaurError(`Message append failed: ${messageRes.status}`, await safeText(messageRes));
-  }
-
-  // 3. Execute idempotently under a stable key.
-  const execRes = await fetch(`${baseUrl}/api/session/${encodedKey}/execute`, {
-    method: "POST",
-    headers: centaurHeaders(),
-    body: JSON.stringify(executeBody({ clientId, config, idempotencyKey, prompt: input.prompt, timeoutMs, threadKey })),
-    signal: controller.signal,
-  });
-  if (!execRes.ok) {
-    throw new CentaurError(`Execute failed: ${execRes.status}`, await safeText(execRes));
-  }
-  const execBody = (await execRes.json()) as { execution_id?: string };
-  const executionId = execBody.execution_id;
-  if (!executionId) throw new CentaurError("Execute response missing execution_id.", JSON.stringify(execBody));
-  await input.onExecutionStarted?.({ threadKey, executionId });
-
-  // 4. Consume SSE event stream until a terminal event.
-  const rawOutput = await consumeSseStream({ baseUrl, encodedKey, executionId, signal: controller.signal, timeoutMs });
-
-  return {
+  const cleanupSession = await input.prepareSession?.({
+    principalId: session.iron_control_principal ?? null,
+    sandboxReady: Boolean(session.sandbox_id),
     threadKey,
-    executionId,
-    rawOutput,
-    backend: `centaur/${config.harness}`,
-    config,
-  };
+  });
+
+  try {
+    // 2. Append user message with a unique client id.
+    const idempotencyKey = input.idempotencyKey ?? crypto.randomUUID();
+    const clientId = stableClientMessageId(idempotencyKey);
+    const messageRes = await fetch(`${baseUrl}/api/session/${encodedKey}/messages`, {
+      method: "POST",
+      headers: centaurHeaders(),
+      body: JSON.stringify({
+        messages: [
+          {
+            client_message_id: clientId,
+            role: "user",
+            parts: [{ type: "text", text: input.prompt }],
+            metadata: { source: "ronin" },
+          },
+        ],
+      }),
+      signal: controller.signal,
+    });
+    if (!messageRes.ok) {
+      throw new CentaurError(`Message append failed: ${messageRes.status}`, await safeText(messageRes));
+    }
+
+    // 3. Execute idempotently under a stable key.
+    const execRes = await fetch(`${baseUrl}/api/session/${encodedKey}/execute`, {
+      method: "POST",
+      headers: centaurHeaders(),
+      body: JSON.stringify(executeBody({ clientId, config, idempotencyKey, prompt: input.prompt, timeoutMs, threadKey })),
+      signal: controller.signal,
+    });
+    if (!execRes.ok) {
+      throw new CentaurError(`Execute failed: ${execRes.status}`, await safeText(execRes));
+    }
+    const execBody = (await execRes.json()) as { execution_id?: string };
+    const executionId = execBody.execution_id;
+    if (!executionId) throw new CentaurError("Execute response missing execution_id.", JSON.stringify(execBody));
+    await input.onExecutionStarted?.({ threadKey, executionId });
+
+    // 4. Consume SSE event stream until a terminal event.
+    const rawOutput = await consumeSseStream({ baseUrl, encodedKey, executionId, signal: controller.signal, timeoutMs });
+
+    return {
+      threadKey,
+      executionId,
+      rawOutput,
+      backend: `centaur/${config.harness}`,
+      config,
+    };
+  } finally {
+    await cleanupSession?.();
+  }
 }
 
 function resolvedConfig(config: CentaurExecutionConfig | undefined) {

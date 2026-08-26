@@ -13,7 +13,7 @@ Ronin can take a real company context, route work to the right repo, run the age
 
 Ronin keeps long-lived secrets on the backend.
 
-The Centaur agent receives a `GITHUB_TOKEN` scoped to the repo clone and branch push. Configuring this token in Centaur is an operator requirement; Ronin does not provision it. The GitHub App private key, Slack token, Telegram token, and database credentials stay outside the agent. Ronin never passes a GitHub installation token through prompts, metadata, session messages, or the Centaur API.
+Ronin mints a short-lived GitHub App token restricted to the authorized repository and Contents permission, stores it through Iron Control's encrypted secret API, grants it only to the session principal, and deletes it after execution. The proxy injects Git authentication only for that repository's HTTPS path; no token enters the prompt, sandbox environment, execution metadata, logs, or artifacts. The GitHub App private key, Slack token, Telegram token, and database credentials stay outside the agent.
 
 ## Product behavior
 

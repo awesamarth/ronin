@@ -100,6 +100,39 @@ test("runCentaurTask posts the contract bodies with URL-encoded thread key and e
   }
 });
 
+test("runCentaurTask prepares and cleans a session before and after execution", async () => {
+  process.env.CENTAUR_API_KEY = "test-key";
+  const order: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL) => {
+    const path = String(url);
+    if (!path.includes("/messages") && !path.includes("/execute") && !path.includes("/events")) {
+      order.push("session");
+      return Response.json({ iron_control_principal: "prn_test", sandbox_id: null });
+    }
+    if (path.includes("/messages")) {
+      order.push("message");
+      return Response.json({});
+    }
+    if (path.includes("/execute")) return Response.json({ execution_id: "exec" });
+    return new Response("event: session.execution_completed\ndata: {}\n\n", { status: 200 });
+  }) as typeof fetch;
+  try {
+    await runCentaurTask({
+      threadKey: "ronin:prepared",
+      prompt: "p",
+      prepareSession: async (session) => {
+        expect(session).toEqual({ principalId: "prn_test", sandboxReady: false, threadKey: "ronin:prepared" });
+        order.push("prepare");
+        return async () => { order.push("cleanup"); };
+      },
+    });
+    expect(order).toEqual(["session", "prepare", "message", "cleanup"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("session.output.line JSONL stream accumulates deltas and turn/completed items", () => {
   let state = emptyState();
   const line = (payload: unknown) =>

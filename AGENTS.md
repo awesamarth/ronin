@@ -40,7 +40,7 @@ bun run --cwd apps/dashboard telegram:connector
 - Never commit `.env`, `*.db`, `key.pem`, `node_modules`, `.next`, `.source`, or local sandbox state.
 - Never put GitHub App private keys, Slack tokens, Telegram tokens, or hosted-model API keys in client components or `NEXT_PUBLIC_*` variables.
 - GitHub App private key handling belongs on the server side only.
-- Never pass a GitHub installation token through prompts, metadata, session messages, or the Centaur API. Ronin uses its GitHub App token server-side for compare and PR API calls.
+- Never pass a GitHub installation token through prompts, metadata, session messages, generic Centaur execution requests, logs, or artifacts. Workspace tokens may cross only the authenticated Iron Control secret API as an encrypted, exact-repository, principal-bound credential and must be deleted after execution.
 - Treat `CENTAUR_API_KEY` as a privileged service credential. Until Centaur has a scoped `ronin:` ingress identity, it must be admin- or Console-capable and stay server-only.
 - Keep generated demo scratch files out of the public repo unless the user explicitly asks to publish them.
 
@@ -50,7 +50,7 @@ bun run --cwd apps/dashboard telegram:connector
 - GitHub App token and installation helpers live in `apps/dashboard/src/lib/github-app.ts`.
 - GitHub run processing lives in `apps/dashboard/src/lib/github-run-processor.ts`.
 - Centaur client lives in `apps/dashboard/src/lib/centaur-client.ts`.
-- Workspace execution lives in `apps/dashboard/src/lib/github-workspace-runner.ts`.
+- Workspace execution lives in `apps/dashboard/src/lib/github-workspace-runner.ts`; exact-repository token attachment and cleanup live in `apps/dashboard/src/lib/github-credential-broker.ts`.
 - Slack and Telegram message routing lives in `apps/dashboard/src/lib/message-ingest.ts`.
 - Dashboard data loading lives in `apps/dashboard/src/lib/dashboard-data.ts`.
 - Prisma schema lives in `apps/dashboard/prisma/schema.prisma`.
@@ -90,7 +90,6 @@ The dashboard is an operator console, not a marketing landing page.
 - Replace the single-workspace Slack bot-token setup with Slack OAuth installations and encrypted per-workspace bot credentials for production multi-workspace SaaS.
 - Add organization-level hosted inference billing and BYOK, followed by compatible BYOM endpoints when customers require them.
 - Replace the local demo's non-expiring static Centaur admin credential with a least-privilege `ronin:` service identity before production; tenant authorization remains in Ronin and per-session sandbox scope.
-- Broker narrowly scoped GitHub write credentials to Centaur for authorized branch pushes without exposing GitHub App installation tokens.
 - Finish hosted operations: production OAuth callback, TLS proxy, database backups/restores, process supervision, monitoring, and log collection.
 - Validate Telegram live without contacting existing users unexpectedly.
 

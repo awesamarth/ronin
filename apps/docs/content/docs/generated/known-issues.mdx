@@ -13,15 +13,13 @@ The dashboard, database, GitHub webhook URL, Slack connector, Telegram connector
 
 The local demo runs with:
 
-- Dashboard on `localhost:3004`
-- Docs on `localhost:3005/docs`
+- Dashboard on `localhost:3000`
 - Slack Socket Mode connector
-- Telegram long-polling connector
-- Centaur execution backend
+- Centaur execution backend and Iron Control credential broker
 
 ## Tenant model
 
-The operator console uses allowlisted GitHub OAuth, but it still mostly uses the first configured org. Customer-facing operation needs org switching, install ownership, and membership roles beyond the deployment-wide allowlist.
+Ronin resolves an authenticated active organization, memberships, fixed roles, channel audience, repository policy, and immutable Run authorization scope. Production still needs forced PostgreSQL RLS with split tenant/system database roles.
 
 ## Background work
 
@@ -29,7 +27,7 @@ GitHub runs are atomically claimed from PostgreSQL by a worker and stale runs ca
 
 ## Centaur service identity
 
-Centaur currently requires an admin- or Console-capable credential for Ronin's `ronin:*` session keys. A dedicated prefix-scoped Ronin ingress identity should replace that broad credential upstream.
+The local demo uses a non-expiring static Centaur admin credential for `ronin:*` sessions and a server-only Iron Control admin key. Repository tokens themselves are short-lived, exact-repository GitHub App tokens attached only to the session principal and deleted after execution. Dedicated least-privilege Ronin service identities should replace both broad control credentials before production.
 
 ## Execution policy profiles
 

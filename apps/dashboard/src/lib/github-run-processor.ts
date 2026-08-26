@@ -114,7 +114,7 @@ async function processClaimedGithubRun(runId: string) {
       return await processRepositoryOnboardingRun({ input, run });
     }
 
-    const compare = await fetchCompareForRun(input, run.repo.fullName);
+    const compare = await fetchCompareForRun(input, run.repo.fullName, run.repo.githubRepoId);
     const prompt = buildProcessingPrompt({
       compare,
       input,
@@ -489,29 +489,34 @@ function shouldRunWorkspaceMaintenance(kind: string, capabilities: string, sugge
   return !changelogDraft.toLowerCase().includes("no changelog");
 }
 
-async function fetchCompareForRun(input: QueuedRunInput, repo: string) {
+async function fetchCompareForRun(input: QueuedRunInput, repo: string, repositoryId: string | null) {
   const installationId = input.installationId;
   if (!installationId) throw new Error("GitHub installation id is missing from run input.");
+  const githubRepoId = Number(repositoryId);
+  if (!Number.isSafeInteger(githubRepoId) || githubRepoId <= 0) throw new Error(`Repository ${repo} has no valid GitHub repository id.`);
 
   if (input.eventName === "push") {
     const before = input.push?.before;
     const after = input.push?.after;
     if (!before || !after) throw new Error("Push run input is missing before/after SHAs.");
-    return fetchGitHubCompare({ after, before, installationId, repo });
+    return fetchGitHubCompare({ after, before, installationId, repo, repositoryId: githubRepoId });
   }
 
   if (input.eventName === "pull_request") {
     const before = input.pullRequest?.base?.sha;
     const after = input.pullRequest?.head?.sha;
     if (!before || !after) throw new Error("Pull request run input is missing base/head SHAs.");
-    return fetchGitHubCompare({ after, before, installationId, repo });
+    return fetchGitHubCompare({ after, before, installationId, repo, repositoryId: githubRepoId });
   }
 
   throw new Error(`Run event ${input.eventName ?? "unknown"} does not have a diff processor yet.`);
 }
 
-async function fetchGitHubCompare(input: { after: string; before: string; installationId: string; repo: string }) {
-  const { token } = await createInstallationToken(input.installationId);
+async function fetchGitHubCompare(input: { after: string; before: string; installationId: string; repo: string; repositoryId: number }) {
+  const { token } = await createInstallationToken(input.installationId, {
+    repositoryIds: [input.repositoryId],
+    permissions: { contents: "read" },
+  });
   const response = await fetch(`https://api.github.com/repos/${input.repo}/compare/${input.before}...${input.after}`, {
     headers: {
       accept: "application/vnd.github+json",

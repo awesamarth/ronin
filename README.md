@@ -2,7 +2,7 @@
 
 Ronin is an agentic solutions engineer for protocol teams, devtool companies, and enterprise engineering orgs. It is not trying to replace human solutions engineers; it is meant to offload the repeatable parts of the job: watching repos, keeping docs current, answering builder questions, proposing fixes, and opening PRs.
 
-Ronin sits around the execution agent as the product and control plane. Ronin owns tenants, GitHub App installations, repository routing, support-channel mappings, artifacts, audit logs, and product policy. The agent does the reasoning and repo work after Ronin has resolved the right org, repo, channel, and allowed action. Repo execution is delegated to Centaur: the operator must configure Centaur with a scoped GitHub token, after which it clones repos, runs checks, commits, and pushes.
+Ronin sits around the execution agent as the product and control plane. Ronin owns tenants, GitHub App installations, repository routing, support-channel mappings, artifacts, audit logs, and product policy. The agent does the reasoning and repo work after Ronin has resolved the right org, repo, channel, and allowed action. Repo execution is delegated to Centaur: Ronin automatically mints an exact-repository GitHub App token for the authorized Run, attaches it only to that session's network proxy, then deletes it after Centaur clones, checks, commits, and pushes.
 
 ## What It Does
 
@@ -20,7 +20,7 @@ Ronin sits around the execution agent as the product and control plane. Ronin ow
 
 An org installs the Ronin GitHub App and chooses which repositories Ronin can access. GitHub sends an installation webhook, Ronin maps the installation to an org and watched repo, creates a repository onboarding run, and starts a Centaur execution.
 
-The Centaur agent clones the repo using its operator-configured `GITHUB_TOKEN`, edits files, runs checks, commits to a `ronin/patch-*` branch, and pushes. Ronin then uses its own GitHub App installation token server-side to open the GitHub PR and stores artifacts for the dashboard and future context.
+The Centaur agent clones the repo over HTTPS, edits files, runs checks, commits to a `ronin/patch-*` branch, and pushes through the principal-bound credential proxy. The token is never placed in the prompt, environment, execution metadata, logs, or artifacts. Ronin then opens the PR server-side and stores artifacts for the dashboard and future context.
 
 ### Push Handling
 
@@ -48,7 +48,7 @@ Ronin dashboard and API
         |
         v
 Centaur execution
-  - clone repository (operator-configured GITHUB_TOKEN)
+  - clone/push exact repository through a principal-bound credential proxy
   - run agent with Ronin skill
   - edit code/docs/changelog
   - run checks
@@ -120,7 +120,7 @@ Important values:
 - `SLACK_APP_TOKEN`, `SLACK_BOT_TOKEN`: Slack Socket Mode connector.
 - `RONIN_HOSTED_LLM_API_KEY`: hosted inference credential for unconnected Slack workspaces. This public path is model-only and never enters a Centaur tool sandbox. Connected-org DMs use Centaur with organization context. Configure public model, endpoint, quotas, prompt/output limits, concurrency, and timeout with the `RONIN_HOSTED_*` variables in `.env.example`.
 - Telegram token variables if running the Telegram connector.
-- `CENTAUR_API_URL`, `CENTAUR_API_KEY`: Centaur execution backend configuration. Centaur must be configured with `default_sandbox_repo_cache=none`; Ronin rejects any reported session capability that differs from `RONIN_CENTAUR_REPO_CACHE_ACCESS` (production default: `none`), preventing shared repository mounts across tenants. `ronin:*` sessions currently require an admin- or Console-capable credential; a least-privilege renewable service credential remains required.
+- `CENTAUR_API_URL`, `CENTAUR_API_KEY`: Centaur execution backend configuration. Centaur must be configured with `default_sandbox_repo_cache=none`; Ronin rejects conflicting reported capabilities. `IRON_CONTROL_API_URL` and server-only `IRON_CONTROL_API_KEY` attach encrypted, exact-repository GitHub credentials to the returned session principal. `IRON_CONTROL_HOST` is only needed behind a local Rails host-authorized port-forward. A least-privilege `ronin:` service identity remains required before production.
 - `RONIN_HARNESS`: fallback harness (defaults to `pi`); repositories may override harness/model/provider/reasoning.
 - Optional `RONIN_MODEL`, `RONIN_PROVIDER`, `RONIN_REASONING`, `CENTAUR_TIMEOUT_MS`.
 

@@ -9,6 +9,7 @@ export async function runTrackedCentaurTask(input: {
   idempotencyKey: string;
   timeoutMs?: number;
   config?: CentaurExecutionConfig;
+  prepareSession?: Parameters<typeof runCentaurTask>[0]["prepareSession"];
 }): Promise<CentaurResult> {
   const run = await prisma.run.findUnique({ where: { id: input.runId }, select: { orgId: true } });
   if (!run) throw new Error(`Run ${input.runId} does not exist.`);
@@ -42,6 +43,7 @@ export async function runTrackedCentaurTask(input: {
       idempotencyKey: input.idempotencyKey,
       timeoutMs: input.timeoutMs,
       config: input.config,
+      prepareSession: input.prepareSession,
       onExecutionStarted: async ({ executionId, threadKey }) => {
         await prisma.$transaction([
           prisma.agentExecution.update({
